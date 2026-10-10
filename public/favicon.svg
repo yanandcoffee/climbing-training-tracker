@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="14" fill="#0f172a"/>
+  <!-- mountain / route line -->
+  <path d="M12 46 L26 22 L36 38 L44 26 L52 46 Z" fill="none" stroke="#38bdf8" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+  <circle cx="26" cy="22" r="3.5" fill="#f97316"/>
+  <circle cx="44" cy="26" r="3.5" fill="#f97316"/>
+</svg>
