@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import type { AIProvider, Snapshot } from "../types";
 import { useStore } from "../store/useStore";
+import CloudSyncSection from "../components/CloudSyncSection";
 
 const ANTHROPIC_MODELS = [
   { id: "claude-opus-4-8", label: "Opus 4.8 (most capable)" },
@@ -133,6 +134,8 @@ export default function SettingsScreen() {
           ))}
         </select>
       </section>
+
+      <CloudSyncSection />
 
       <section className="space-y-2">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">

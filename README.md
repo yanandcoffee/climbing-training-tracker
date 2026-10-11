@@ -10,7 +10,7 @@ A mobile-first, local-first PWA for tracking climbing training:
 - **Trend charts** per exercise and a readiness-over-time view.
 - **Import from Notes** — paste your coach's note and an LLM structures it into a workout (optional; choose **Claude (Anthropic)** or **ChatGPT (OpenAI)** and use your own API key).
 
-Everything is stored on-device (localStorage) through a storage-adapter seam, so cloud sync can be added later (recommended: Supabase). Use **Settings → Export JSON** to back up or move data between devices today.
+Everything is stored on-device (localStorage) first. **Cloud sync** via Supabase is optional (see below); without it, use **Settings → Export JSON** to back up or move data between devices.
 
 ## Develop
 
@@ -55,3 +55,24 @@ on-wall drills (4x4s, silent feet), strength & conditioning (max hangs → `hold
 5×10s, weighted pull-ups → `reps` 4×5, campus ladders), core (front lever →
 `hold` 4×12s, leg raises → `reps` 3×10), and mobility (traverse warm-up, mobility
 flow, stretching → `duration`).
+
+## Cloud sync (Supabase) — optional
+
+Syncs check-ins, exercises, workouts, templates and the schedule across devices. Offline-first: the app always works from local data and syncs in the background (after edits, on startup, when the app regains focus or comes back online). Conflicts resolve last-write-wins per record. **AI API keys are never uploaded.**
+
+One-time setup:
+
+1. Create a project at [supabase.com](https://supabase.com) (free tier is fine).
+2. **SQL Editor → New query**, paste the contents of [`supabase/schema.sql`](supabase/schema.sql), **Run**. This creates the `records` table with row-level security (each user can only see their own rows).
+3. **Authentication → Sign In / Providers → Email**: turn **Confirm email** off. This lets you sign in with an email + password immediately, with no email sent.
+4. **Project Settings → API**: copy the project URL and the `anon` public key into `.env.local` (see `.env.example`):
+   ```
+   VITE_SUPABASE_URL=https://xxxx.supabase.co
+   VITE_SUPABASE_ANON_KEY=...
+   ```
+5. Restart `npm run dev`, open **Settings → Cloud sync**, enter your email and a password, and tap **Create account**. On your other devices, **Sign in** with the same email and password.
+6. Optional but recommended: once your account exists, turn off **Allow new users to sign up** (same Email settings page) so nobody else can create accounts on your project.
+
+Prefer a passwordless **Email code**? It needs the Magic Link email template to include `{{ .Token }}` (Authentication → Email Templates). Supabase may restrict template editing unless custom SMTP is configured; if so, use the password option instead. The built-in email sender also has a very low hourly limit.
+
+For a deployed build, set the same two `VITE_` variables in your host's environment.

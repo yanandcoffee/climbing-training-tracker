@@ -18,7 +18,13 @@ import { uid } from "../lib/id";
 import { scoreForCheckIn } from "../lib/scoring";
 import { weekdayOf } from "../lib/dates";
 import { LocalStorageAdapter } from "../storage/LocalStorageAdapter";
-import { emptySnapshot, SNAPSHOT_VERSION, type StorageAdapter } from "../storage/StorageAdapter";
+import {
+  emptySnapshot,
+  normalizeSnapshot,
+  SNAPSHOT_VERSION,
+  type StorageAdapter,
+} from "../storage/StorageAdapter";
+import { mergeRows, type Row } from "../sync/engine";
 
 const adapter: StorageAdapter = new LocalStorageAdapter();
 
@@ -66,6 +72,8 @@ interface State {
 
   exportSnapshot: () => Snapshot;
   importSnapshot: (snapshot: Snapshot) => void;
+  /** Merge rows pulled from the cloud (newer updatedAt wins). */
+  applyRemote: (rows: Row[]) => void;
   clearAll: () => void;
 }
 
@@ -122,9 +130,10 @@ export const useStore = create<State>((set, get) => {
             : c,
         );
       } else {
+        // Natural key: one check-in per date, so two devices edit the same record.
         checkIns = [
           ...get().checkIns,
-          stamp<CheckIn>({ date, ...data, points }),
+          { ...stamp<CheckIn>({ date, ...data, points }), id: `ci-${date}` },
         ];
       }
       persist({ checkIns });
@@ -199,7 +208,14 @@ export const useStore = create<State>((set, get) => {
           }));
         }
       }
-      const workout = stamp<Workout>({ date, name, exercises });
+      // Natural key (one workout per date). updatedAt 0 = "auto-created, never
+      // edited": any real version from another device always wins the merge, and
+      // the first genuine edit (saveWorkout) stamps a real time.
+      const workout: Workout = {
+        ...stamp<Workout>({ date, name, exercises }),
+        id: `wo-${date}`,
+        updatedAt: 0,
+      };
       persist({ workouts: [...get().workouts, workout] });
       return workout;
     },
@@ -250,15 +266,28 @@ export const useStore = create<State>((set, get) => {
       persist({ settings: { ...get().settings, ...patch } }),
 
     exportSnapshot: () => snapshotOf(get()),
-    importSnapshot: (snapshot) =>
+    importSnapshot: (snapshot) => {
+      const s = normalizeSnapshot({ ...emptySnapshot(), ...snapshot });
       persist({
-        checkIns: snapshot.checkIns ?? [],
-        exercises: snapshot.exercises ?? [],
-        workouts: snapshot.workouts ?? [],
-        templates: snapshot.templates ?? [],
-        schedule: snapshot.schedule ?? [],
+        checkIns: s.checkIns,
+        exercises: s.exercises,
+        workouts: s.workouts,
+        templates: s.templates,
+        schedule: s.schedule,
         settings: { ...get().settings, ...(snapshot.settings ?? {}) },
-      }),
+      });
+    },
+    applyRemote: (rows) => {
+      const { snapshot, changed } = mergeRows(snapshotOf(get()), rows);
+      if (!changed) return; // no-op merges must not re-notify subscribers (would loop sync)
+      persist({
+        checkIns: snapshot.checkIns,
+        exercises: snapshot.exercises,
+        workouts: snapshot.workouts,
+        templates: snapshot.templates,
+        schedule: snapshot.schedule,
+      });
+    },
     clearAll: () => {
       const base = emptySnapshot();
       persist({

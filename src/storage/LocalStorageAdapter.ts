@@ -1,5 +1,10 @@
 import type { Snapshot } from "../types";
-import { emptySnapshot, SNAPSHOT_VERSION, type StorageAdapter } from "./StorageAdapter";
+import {
+  emptySnapshot,
+  normalizeSnapshot,
+  SNAPSHOT_VERSION,
+  type StorageAdapter,
+} from "./StorageAdapter";
 
 const KEY = "ctt.snapshot.v1";
 
@@ -23,10 +28,10 @@ export class LocalStorageAdapter implements StorageAdapter {
 
 function migrate(s: Partial<Snapshot>): Snapshot {
   const base = emptySnapshot();
-  return {
+  return normalizeSnapshot({
     ...base,
     ...s,
     version: SNAPSHOT_VERSION,
     settings: { ...base.settings, ...(s.settings ?? {}) },
-  };
+  });
 }

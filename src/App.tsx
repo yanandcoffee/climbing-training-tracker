@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Routes, Route } from "react-router-dom";
 import { useStore } from "./store/useStore";
+import { useSync } from "./sync/useSync";
 import BottomNav from "./components/BottomNav";
 import TodayScreen from "./screens/TodayScreen";
 import CalendarScreen from "./screens/CalendarScreen";
@@ -16,7 +17,8 @@ export default function App() {
   const loaded = useStore((s) => s.loaded);
 
   useEffect(() => {
-    void hydrate();
+    // Hydrate local data first, then start cloud sync (no-op when unconfigured).
+    void hydrate().then(() => useSync.getState().init());
   }, [hydrate]);
 
   return (
