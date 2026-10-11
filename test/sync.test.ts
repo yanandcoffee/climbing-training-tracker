@@ -6,12 +6,15 @@ import {
   snapshotToRows,
   syncCycle,
   emptySyncState,
+  reconcileSettings,
   type RemoteBackend,
   type Row,
+  type SettingsBackend,
+  type SettingsRow,
   type SyncState,
 } from "../src/sync/engine";
 import { emptySnapshot, normalizeSnapshot } from "../src/storage/StorageAdapter";
-import type { CheckIn, Exercise, Snapshot, Workout } from "../src/types";
+import type { CheckIn, Exercise, Settings, Snapshot, Workout } from "../src/types";
 
 let failures = 0;
 const assert = (cond: boolean, msg: string) => {
@@ -230,6 +233,73 @@ console.log("Normalization:");
   assert(n.checkIns.length === 1 && n.checkIns[0].id === "ci-2026-03-01", "legacy check-ins re-keyed to ci-<date>");
   assert(n.checkIns[0].points === 4, "newest duplicate for the date wins");
   assert(n.workouts[0].id === "wo-2026-03-01", "legacy workout re-keyed to wo-<date>");
+}
+
+// ---- 8. account-saved API keys (opt-in) ----------------------------------------------------------
+console.log("Saved API keys:");
+{
+  let serverRow: SettingsRow | null = null;
+  const settingsServer: SettingsBackend = {
+    pullSettings: async () => (serverRow ? structuredClone(serverRow) : null),
+    pushSettings: async (row) => {
+      if (serverRow && row.updated_at <= serverRow.updated_at) return; // trigger: skip stale
+      serverRow = structuredClone(row);
+    },
+  };
+  const base = emptySnapshot().settings;
+  const sync = async (local: Settings): Promise<Settings> => {
+    const remote = await settingsServer.pullSettings();
+    const { apply, push } = reconcileSettings(local, remote);
+    if (push) await settingsServer.pushSettings(push);
+    return apply ?? local;
+  };
+
+  // Device that never opted in uploads nothing.
+  let lone: Settings = { ...base, anthropicApiKey: "sk-ant-LONE", settingsUpdatedAt: 50 };
+  lone = await sync(lone);
+  assert(serverRow === null, "nothing is uploaded unless saving is turned on");
+
+  // A turns saving on.
+  let a: Settings = { ...base, anthropicApiKey: "sk-ant-AAA", syncApiKeys: true, settingsUpdatedAt: 100 };
+  a = await sync(a);
+  assert(serverRow?.enabled === true && serverRow.data.anthropicApiKey === "sk-ant-AAA", "turning it on uploads the key");
+  assert(!("syncApiKeys" in (serverRow?.data ?? {})), "the on/off flag itself is not part of the saved data");
+
+  // B is a fresh device that already typed its own key locally (newer than A's).
+  let b: Settings = { ...base, openaiApiKey: "sk-BBB-local", settingsUpdatedAt: 200 };
+  b = await sync(b);
+  assert(b.anthropicApiKey === "sk-ant-AAA" && b.syncApiKeys === true, "a new device joins with the account's keys");
+  assert(b.openaiApiKey === undefined, "…replacing its own local-only key rather than mixing");
+  assert(serverRow?.data.anthropicApiKey === "sk-ant-AAA", "a new device never overwrites the account's keys");
+
+  // A changes its key; B picks it up.
+  a = { ...a, anthropicApiKey: "sk-ant-AAA2", settingsUpdatedAt: 300 };
+  a = await sync(a);
+  b = await sync(b);
+  assert(b.anthropicApiKey === "sk-ant-AAA2", "a key change on one device reaches the other");
+
+  // A removes the key entirely; the removal propagates.
+  a = { ...a, anthropicApiKey: undefined, settingsUpdatedAt: 400 };
+  a = await sync(a);
+  b = await sync(b);
+  assert(b.anthropicApiKey === undefined, "removing a key on one device removes it on the other");
+
+  // Stale write from B is rejected.
+  await settingsServer.pushSettings({ enabled: true, data: { anthropicApiKey: "sk-ant-OLD" }, updated_at: 250 });
+  assert(serverRow?.data.anthropicApiKey === undefined, "server rejects an older settings write");
+
+  // B turns saving off: keys leave the server; A stops syncing but keeps its local keys.
+  a = { ...a, openaiApiKey: "sk-AAA-oa", settingsUpdatedAt: 500 };
+  a = await sync(a);
+  b = await sync(b);
+  b = { ...b, syncApiKeys: false, settingsUpdatedAt: 600 };
+  b = await sync(b);
+  assert(serverRow?.enabled === false && Object.keys(serverRow.data).length === 0, "turning it off removes keys from the server");
+  a = await sync(a);
+  assert(a.syncApiKeys === false && a.openaiApiKey === "sk-AAA-oa", "other devices switch off but keep their local keys");
+  a = { ...a, openaiApiKey: "sk-AAA-new", settingsUpdatedAt: 700 };
+  a = await sync(a);
+  assert(serverRow?.enabled === false && !serverRow.data.openaiApiKey, "edits while off are not uploaded");
 }
 
 console.log(failures === 0 ? "\nSYNC OK ✅" : `\n${failures} FAILURES ❌`);

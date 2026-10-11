@@ -173,6 +173,16 @@ await useStore.getState().hydrate();
   assert(checkInForDate(st, date)?.points === -2, "hydrate restored check-in points");
 }
 
+// Settings stamping: only real changes to account-synced fields count as edits
+s.setSettings({ anthropicApiKey: "sk-ant-x" });
+const stamped = useStore.getState().settings.settingsUpdatedAt;
+assert(typeof stamped === "number" && stamped > 0, "changing a key stamps settingsUpdatedAt");
+s.setSettings({ anthropicApiKey: "sk-ant-x", provider: useStore.getState().settings.provider });
+assert(
+  useStore.getState().settings.settingsUpdatedAt === stamped,
+  "re-saving the same values (e.g. blurring the field) does not re-stamp",
+);
+
 // Export/import round-trip
 const snap = useStore.getState().exportSnapshot();
 assert(snap.workouts.length >= 1 && snap.checkIns.length >= 1, "snapshot contains data");

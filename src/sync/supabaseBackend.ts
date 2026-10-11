@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { RemoteBackend, Row } from "./engine";
+import type { RemoteBackend, Row, SettingsBackend, SettingsRow } from "./engine";
 
 const PAGE = 1000;
 
@@ -41,6 +41,29 @@ export function createSupabaseBackend(
         })),
         { onConflict: "user_id,kind,id" },
       );
+      if (error) throw error;
+    },
+  };
+}
+
+export function createSupabaseSettingsBackend(
+  client: SupabaseClient,
+  userId: string,
+): SettingsBackend {
+  return {
+    async pullSettings() {
+      const { data, error } = await client
+        .from("user_settings")
+        .select("enabled,data,updated_at")
+        .maybeSingle();
+      if (error) throw error;
+      return (data as SettingsRow | null) ?? null;
+    },
+
+    async pushSettings(row) {
+      const { error } = await client
+        .from("user_settings")
+        .upsert({ user_id: userId, ...row }, { onConflict: "user_id" });
       if (error) throw error;
     },
   };

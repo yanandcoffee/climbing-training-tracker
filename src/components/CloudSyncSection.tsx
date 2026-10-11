@@ -211,7 +211,7 @@ export default function CloudSyncSection() {
       )}
       <p className="text-[11px] text-slate-400">
         Syncs your check-ins, exercises, workouts and schedule. API keys are
-        never uploaded.
+        only uploaded if you turn on “Save API keys to my account” above.
       </p>
     </section>
   );

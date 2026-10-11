@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import type { AIProvider, Snapshot } from "../types";
 import { useStore } from "../store/useStore";
 import CloudSyncSection from "../components/CloudSyncSection";
+import { useSync } from "../sync/useSync";
 
 const ANTHROPIC_MODELS = [
   { id: "claude-opus-4-8", label: "Opus 4.8 (most capable)" },
@@ -22,8 +23,19 @@ export default function SettingsScreen() {
   const importSnapshot = useStore((s) => s.importSnapshot);
   const clearAll = useStore((s) => s.clearAll);
 
+  const syncStatus = useSync((s) => s.status);
+  const signedIn = syncStatus !== "unconfigured" && syncStatus !== "signed_out";
+
   const [anthKey, setAnthKey] = useState(settings.anthropicApiKey ?? "");
   const [oaKey, setOaKey] = useState(settings.openaiApiKey ?? "");
+  // Refresh the fields when keys change underneath us (e.g. pulled from the account).
+  const storedKeys = `${settings.anthropicApiKey ?? ""}\n${settings.openaiApiKey ?? ""}`;
+  const [seenKeys, setSeenKeys] = useState(storedKeys);
+  if (storedKeys !== seenKeys) {
+    setSeenKeys(storedKeys);
+    setAnthKey(settings.anthropicApiKey ?? "");
+    setOaKey(settings.openaiApiKey ?? "");
+  }
   const [showKey, setShowKey] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -116,10 +128,37 @@ export default function SettingsScreen() {
           </button>
         </div>
         <p className="text-[11px] text-slate-400">
-          Stored only in this browser. Used to call the{" "}
-          {isOpenAI ? "OpenAI" : "Anthropic"} API directly from your device. The
-          app works fully without it (manual entry).
+          {settings.syncApiKeys
+            ? "Saved in this browser and to your account."
+            : "Stored only in this browser."}{" "}
+          Used to call the {isOpenAI ? "OpenAI" : "Anthropic"} API directly from
+          your device. The app works fully without it (manual entry).
         </p>
+
+        {signedIn ? (
+          <label className="flex items-start gap-3 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+            <input
+              type="checkbox"
+              checked={settings.syncApiKeys === true}
+              onChange={(e) => setSettings({ syncApiKeys: e.target.checked })}
+              className="mt-0.5 h-4 w-4 accent-sky-600"
+            />
+            <span className="text-sm">
+              Save API keys to my account
+              <span className="mt-0.5 block text-[11px] text-slate-400">
+                Syncs your provider, models and keys to your other devices. Keys
+                are stored in your Supabase project, readable only when signed in
+                as you. Turning this off removes them from the server.
+              </span>
+            </span>
+          </label>
+        ) : (
+          syncStatus === "signed_out" && (
+            <p className="text-[11px] text-slate-400">
+              Sign in under Cloud sync to save your keys to your account.
+            </p>
+          )
+        )}
 
         <label className="mt-2 block text-sm">Model</label>
         <select

@@ -1,8 +1,8 @@
 import { create } from "zustand";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { useStore } from "../store/useStore";
-import { emptySyncState, syncCycle, type SyncState } from "./engine";
-import { createSupabaseBackend } from "./supabaseBackend";
+import { emptySyncState, reconcileSettings, syncCycle, type SyncState } from "./engine";
+import { createSupabaseBackend, createSupabaseSettingsBackend } from "./supabaseBackend";
 
 const URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -69,6 +69,25 @@ const message = (e: unknown) =>
       ? String((e as { message: unknown }).message)
       : "Something went wrong.";
 
+/**
+ * Reconcile the opt-in account-saved AI settings. Failures don't fail the
+ * record sync; they're only reported if the user has turned saving on (e.g. the
+ * user_settings table hasn't been created yet).
+ */
+async function syncSettings(client: SupabaseClient, userId: string): Promise<string | null> {
+  try {
+    const backend = createSupabaseSettingsBackend(client, userId);
+    const remote = await backend.pullSettings();
+    const { apply, push } = reconcileSettings(useStore.getState().settings, remote);
+    if (push) await backend.pushSettings(push);
+    if (apply) useStore.getState().applyRemoteSettings(apply);
+    return null;
+  } catch (e) {
+    if (useStore.getState().settings.syncApiKeys !== true) return null;
+    return `Couldn't save API keys to your account: ${message(e)}. If this mentions user_settings, re-run supabase/schema.sql.`;
+  }
+}
+
 let running = false;
 let rerun = false;
 let inited = false;
@@ -102,7 +121,11 @@ export const useSync = create<SyncUI>((set, get) => ({
         s.exercises !== prev.exercises ||
         s.workouts !== prev.workouts ||
         s.templates !== prev.templates ||
-        s.schedule !== prev.schedule;
+        s.schedule !== prev.schedule ||
+        // An edit to account-saved AI settings. Applying a pulled version also
+        // lands here, but only costs one extra sync that finds nothing to do.
+        (s.settings.settingsUpdatedAt !== prev.settings.settingsUpdatedAt &&
+          (s.settings.settingsUpdatedAt ?? 0) > (prev.settings.settingsUpdatedAt ?? 0));
       if (!changed || get().status === "signed_out") return;
       clearTimeout(timer);
       timer = setTimeout(() => void get().syncNow(), DEBOUNCE_MS);
@@ -213,7 +236,9 @@ export const useSync = create<SyncUI>((set, get) => ({
         applyRows: (rows) => useStore.getState().applyRemote(rows),
       });
       saveState(result.state);
-      set({ status: "idle", lastSyncedAt: Date.now() });
+
+      const settingsError = await syncSettings(client, session.user.id);
+      set({ status: "idle", lastSyncedAt: Date.now(), error: settingsError });
     } catch (e) {
       set({ status: "error", error: message(e) });
     } finally {

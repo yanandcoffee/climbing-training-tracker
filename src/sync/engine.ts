@@ -1,4 +1,4 @@
-import type { Snapshot, Synced } from "../types";
+import type { Settings, Snapshot, Synced } from "../types";
 
 // Pure sync logic: no network, no store. The backend and the store are injected,
 // which keeps this testable with simulated devices.
@@ -146,4 +146,84 @@ export async function syncCycle(opts: {
     pulled: pulled.length,
     pushed: toPush.length,
   };
+}
+
+// ---- Account-saved AI settings (opt-in) -------------------------------------
+
+/** Settings fields saved to the account when "Save API keys to my account" is on. */
+export const SYNCED_SETTING_KEYS = [
+  "provider",
+  "anthropicApiKey",
+  "openaiApiKey",
+  "anthropicModel",
+  "openaiModel",
+] as const;
+
+export type SyncedSettings = Pick<Settings, (typeof SYNCED_SETTING_KEYS)[number]>;
+
+/** The single per-user row. `enabled: false` is a tombstone with keys removed. */
+export interface SettingsRow {
+  enabled: boolean;
+  data: Partial<SyncedSettings>;
+  updated_at: number;
+}
+
+export interface SettingsBackend {
+  pullSettings(): Promise<SettingsRow | null>;
+  pushSettings(row: SettingsRow): Promise<void>;
+}
+
+export function pickSyncedSettings(s: Settings): Partial<SyncedSettings> {
+  const out: Partial<SyncedSettings> = {};
+  for (const k of SYNCED_SETTING_KEYS) {
+    if (s[k] !== undefined) (out as Record<string, unknown>)[k] = s[k];
+  }
+  return out;
+}
+
+/**
+ * Decide what to do with local vs account AI settings (last-write-wins).
+ * Returns local settings to apply and/or a row to push; both may be null.
+ */
+export function reconcileSettings(
+  local: Settings,
+  remote: SettingsRow | null,
+): { apply: Settings | null; push: SettingsRow | null } {
+  const lu = local.settingsUpdatedAt ?? 0;
+
+  // Adopt the account version when it's newer, or when the account has saving on
+  // and this device hasn't chosen yet (a new device joins with the account's keys
+  // rather than overwriting them with its own empty fields).
+  const joining = !!remote?.enabled && local.syncApiKeys === undefined;
+  if (remote && (remote.updated_at > lu || joining)) {
+    const apply: Settings = remote.enabled
+      ? {
+          ...local,
+          // Clear synced fields first so a key removed on another device is removed here too.
+          anthropicApiKey: undefined,
+          openaiApiKey: undefined,
+          ...remote.data,
+          syncApiKeys: true,
+          settingsUpdatedAt: remote.updated_at,
+        }
+      : { ...local, syncApiKeys: false, settingsUpdatedAt: remote.updated_at };
+    return { apply, push: null };
+  }
+
+  const remoteOlder = !remote || lu > remote.updated_at;
+
+  // Saving is on here and the local version is newer: upload it.
+  if (local.syncApiKeys === true && remoteOlder && lu > 0) {
+    return {
+      apply: null,
+      push: { enabled: true, data: pickSyncedSettings(local), updated_at: lu },
+    };
+  }
+
+  // Explicitly turned off here, more recently than the account copy: remove the keys from the server.
+  if (local.syncApiKeys === false && remote?.enabled && remoteOlder) {
+    return { apply: null, push: { enabled: false, data: {}, updated_at: lu } };
+  }
+
+  return { apply: null, push: null };
 }

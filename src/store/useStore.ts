@@ -24,7 +24,7 @@ import {
   SNAPSHOT_VERSION,
   type StorageAdapter,
 } from "../storage/StorageAdapter";
-import { mergeRows, type Row } from "../sync/engine";
+import { mergeRows, SYNCED_SETTING_KEYS, type Row } from "../sync/engine";
 
 const adapter: StorageAdapter = new LocalStorageAdapter();
 
@@ -69,6 +69,8 @@ interface State {
   ) => void;
 
   setSettings: (patch: Partial<Settings>) => void;
+  /** Replace settings with a version reconciled from the account (no re-stamp). */
+  applyRemoteSettings: (settings: Settings) => void;
 
   exportSnapshot: () => Snapshot;
   importSnapshot: (snapshot: Snapshot) => void;
@@ -262,8 +264,25 @@ export const useStore = create<State>((set, get) => {
         ),
       }),
 
-    setSettings: (patch) =>
-      persist({ settings: { ...get().settings, ...patch } }),
+    setSettings: (patch) => {
+      // Stamp changes to the account-synced AI settings so the newest edit wins.
+      // Only real changes count — re-saving the same value must not make this
+      // device's copy "newer" than the account's.
+      const current = get().settings;
+      const touchesSynced = (Object.keys(patch) as (keyof Settings)[]).some(
+        (k) =>
+          ((SYNCED_SETTING_KEYS as readonly string[]).includes(k) || k === "syncApiKeys") &&
+          patch[k] !== current[k],
+      );
+      persist({
+        settings: {
+          ...get().settings,
+          ...patch,
+          ...(touchesSynced ? { settingsUpdatedAt: Date.now() } : {}),
+        },
+      });
+    },
+    applyRemoteSettings: (settings) => persist({ settings }),
 
     exportSnapshot: () => snapshotOf(get()),
     importSnapshot: (snapshot) => {

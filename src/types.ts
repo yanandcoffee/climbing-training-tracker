@@ -102,6 +102,14 @@ export interface Settings {
   anthropicModel: string;
   openaiModel: string;
   sync?: SyncConfig;
+  /**
+   * Save provider/models/API keys to the signed-in Supabase account.
+   * undefined = never chosen on this device (joins the account's choice);
+   * false = explicitly turned off here.
+   */
+  syncApiKeys?: boolean;
+  /** Epoch ms of the last local change to the synced AI settings. */
+  settingsUpdatedAt?: number;
 }
 
 export interface Snapshot {

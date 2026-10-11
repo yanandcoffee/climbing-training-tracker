@@ -58,7 +58,7 @@ flow, stretching → `duration`).
 
 ## Cloud sync (Supabase) — optional
 
-Syncs check-ins, exercises, workouts, templates and the schedule across devices. Offline-first: the app always works from local data and syncs in the background (after edits, on startup, when the app regains focus or comes back online). Conflicts resolve last-write-wins per record. **AI API keys are never uploaded.**
+Syncs check-ins, exercises, workouts, templates and the schedule across devices. Offline-first: the app always works from local data and syncs in the background (after edits, on startup, when the app regains focus or comes back online). Conflicts resolve last-write-wins per record. AI API keys stay in the browser unless you turn on **Settings → Save API keys to my account**, which stores your provider, models and keys in your Supabase project (readable only when signed in as you) and syncs them to your other devices. Turning it off removes them from the server.
 
 One-time setup:
 
@@ -74,5 +74,7 @@ One-time setup:
 6. Optional but recommended: once your account exists, turn off **Allow new users to sign up** (same Email settings page) so nobody else can create accounts on your project.
 
 Prefer a passwordless **Email code**? It needs the Magic Link email template to include `{{ .Token }}` (Authentication → Email Templates). Supabase may restrict template editing unless custom SMTP is configured; if so, use the password option instead. The built-in email sender also has a very low hourly limit.
+
+If you set up sync before the API-key option existed, re-run `supabase/schema.sql` (it's safe to re-run) to add the `user_settings` table.
 
 For a deployed build, set the same two `VITE_` variables in your host's environment.
