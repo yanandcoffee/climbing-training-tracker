@@ -22,7 +22,7 @@ export default function DayScreen() {
         </div>
       </header>
 
-      <CheckInCard date={date} />
+      <CheckInCard key={date} date={date} />
       <WorkoutDayView date={date} />
     </div>
   );

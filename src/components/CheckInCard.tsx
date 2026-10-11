@@ -17,48 +17,55 @@ export default function CheckInCard({ date }: { date: string }) {
   const existing = useStore((s) => checkInForDate(s, date));
   const upsert = useStore((s) => s.upsertCheckIn);
 
-  const [color, setColor] = useState<DayColor>(existing?.color ?? "green");
-  const [points, setPoints] = useState<number>(
-    existing ? nearestPointOption(existing.color, existing.points) : 5,
-  );
-  const [note, setNote] = useState<string>(existing?.note ?? "");
+  const savedColor: DayColor = existing?.color ?? "green";
+  const savedPoints = existing ? nearestPointOption(existing.color, existing.points) : 5;
+  const savedNote = existing?.note ?? "";
 
-  // Re-sync local state if the stored check-in changes (e.g. navigation).
+  // Draft: nothing is saved until the user presses the submit button.
+  const [color, setColor] = useState<DayColor>(savedColor);
+  const [points, setPoints] = useState<number>(savedPoints);
+  const [note, setNote] = useState<string>(savedNote);
+  const [edited, setEdited] = useState(false);
+
+  // Pick up a changed saved check-in (e.g. pulled from another device), unless
+  // the user is mid-edit — never overwrite an unsubmitted draft.
   const signature = `${existing?.id ?? ""}:${existing?.updatedAt ?? ""}`;
   const [seen, setSeen] = useState(signature);
   if (signature !== seen) {
     setSeen(signature);
-    const c = existing?.color ?? "green";
-    setColor(c);
-    setPoints(existing ? nearestPointOption(c, existing.points) : 5);
-    setNote(existing?.note ?? "");
+    if (!edited) {
+      setColor(savedColor);
+      setPoints(savedPoints);
+      setNote(savedNote);
+    }
   }
+
+  const dirty =
+    !existing || color !== savedColor || points !== savedPoints || note.trim() !== savedNote;
 
   const options = pointOptions(color);
   const hasSlots = options.length > 1;
 
-  const commit = (next: { color?: DayColor; points?: number; note?: string }) => {
-    const c = next.color ?? color;
-    const p = next.points ?? points;
-    upsert(date, {
-      color: c,
-      quality: qualityForPoints(c, p),
-      note: (next.note ?? note) || undefined,
-    });
-  };
-
   const pickColor = (c: DayColor) => {
     // Default to the mildest slot of the new color (green: best day; others: least severe).
     const opts = pointOptions(c);
-    const p = c === "green" ? opts[opts.length - 1] : opts[0];
     setColor(c);
-    setPoints(p);
-    commit({ color: c, points: p });
+    setPoints(c === "green" ? opts[opts.length - 1] : opts[0]);
+    setEdited(true);
   };
 
   const pickPoints = (p: number) => {
     setPoints(p);
-    commit({ points: p });
+    setEdited(true);
+  };
+
+  const submit = () => {
+    upsert(date, {
+      color,
+      quality: qualityForPoints(color, points),
+      note: note.trim() || undefined,
+    });
+    setEdited(false);
   };
 
   return (
@@ -140,12 +147,23 @@ export default function CheckInCard({ date }: { date: string }) {
 
       <textarea
         value={note}
-        onChange={(e) => setNote(e.target.value)}
-        onBlur={() => commit({})}
+        onChange={(e) => {
+          setNote(e.target.value);
+          setEdited(true);
+        }}
         placeholder="Optional note (sleep, soreness, injury detail…)"
         rows={2}
         className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 p-2 text-sm dark:border-slate-700 dark:bg-slate-800"
       />
+
+      <button
+        type="button"
+        onClick={submit}
+        disabled={!dirty}
+        className="mt-3 w-full rounded-xl bg-sky-600 px-4 py-2.5 font-medium text-white transition-colors disabled:bg-slate-200 disabled:text-slate-500 dark:disabled:bg-slate-800 dark:disabled:text-slate-400"
+      >
+        {!existing ? "Submit check-in" : dirty ? "Update check-in" : "✓ Submitted"}
+      </button>
     </section>
   );
 }
