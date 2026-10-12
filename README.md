@@ -26,7 +26,7 @@ On your phone, use the browser's "Add to Home Screen" to open it like an app.
 
 ## AI note parsing
 
-In **Settings → AI note parsing**, pick a provider — **Claude (Anthropic)**, **ChatGPT (OpenAI)** or **Gemini (Google)** — enter that provider's API key, and choose a model. API use is billed separately from ChatGPT/Claude chat subscriptions; **Gemini** has a free tier (get a key at [aistudio.google.com](https://aistudio.google.com), no card needed — on the free tier Google may use what you send to improve its products, and requests are rate-limited per minute and per day). Keys are stored only in your browser; calls go directly from your device to the chosen provider. Then open a day in the **Calendar** (or the Import button at its top) → **Import coach's note**. Works fully without a key via manual entry.
+In **Settings → AI note parsing**, pick a provider — **Claude (Anthropic)**, **ChatGPT (OpenAI)** or **Gemini (Google)** — enter that provider's API key, and choose a model. API use is billed separately from ChatGPT/Claude chat subscriptions; **Gemini** has a free tier (get a key at [aistudio.google.com](https://aistudio.google.com), no card needed — on the free tier Google may use what you send to improve its products, and requests are rate-limited per minute and per day). Keys are stored only in your browser; calls go directly from your device to the chosen provider. Then tap a day in the **Calendar** → **Import coach's note** (the import dialog also lets you put the workout on several days at once). Works fully without a key via manual entry.
 
 ### Sample coach note (for testing the parser)
 

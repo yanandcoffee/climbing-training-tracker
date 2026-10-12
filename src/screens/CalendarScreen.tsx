@@ -13,7 +13,6 @@ import {
 } from "date-fns";
 import { useActiveCheckIns, useActiveWorkouts } from "../store/useStore";
 import { isEmptyWorkout } from "../lib/workoutPlan";
-import ImportNotesDialog from "../components/ImportNotesDialog";
 import { dateKey, todayKey } from "../lib/dates";
 import { COLOR_HEX } from "../lib/scoring";
 
@@ -22,7 +21,6 @@ export default function CalendarScreen() {
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
   const checkIns = useActiveCheckIns();
   const workouts = useActiveWorkouts();
-  const [importing, setImporting] = useState(false);
 
   const checkByDate = new Map(checkIns.map((c) => [c.date, c]));
   const workoutByDate = new Map(
@@ -61,16 +59,7 @@ export default function CalendarScreen() {
         </div>
       </header>
 
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-xs text-slate-500">Tap a day to plan, copy or edit its workout.</p>
-        <button
-          type="button"
-          onClick={() => setImporting(true)}
-          className="shrink-0 rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white"
-        >
-          📋 Import note
-        </button>
-      </div>
+      <p className="text-xs text-slate-500">Tap a day to import a coach's note, copy a workout, or build one.</p>
 
       <div className="grid grid-cols-7 gap-1 text-center text-[11px] text-slate-400">
         {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
@@ -133,9 +122,6 @@ export default function CalendarScreen() {
         </span>
       </div>
 
-      {importing && (
-        <ImportNotesDialog initialDate={todayKey()} onClose={() => setImporting(false)} />
-      )}
     </div>
   );
 }
