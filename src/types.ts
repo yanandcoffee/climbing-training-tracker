@@ -1,4 +1,4 @@
-// Core domain model for the Climbing Training Tracker.
+// Core domain model for Break Your Plateau.
 // Every persisted record carries id/updatedAt/deletedAt so a future cloud
 // backend can do last-write-wins merge + delete propagation (see Synced below).
 

@@ -1,6 +1,6 @@
-# Climbing Training Tracker
+# Break Your Plateau
 
-A mobile-first, local-first PWA for tracking climbing training:
+My personal bouldering training tracker — a mobile-first web app for planning workouts, logging them, and watching progress over time:
 
 - **Daily readiness check-in** — Green / Yellow / Orange / Red / Black, graded to a points score.
 - **Calendar** for planning: on any day, import a coach's note, copy a previous workout, or build one exercise by exercise.
@@ -11,7 +11,7 @@ A mobile-first, local-first PWA for tracking climbing training:
 - **Trend charts** per exercise and a readiness-over-time view.
 - **Import a coach's note** — an LLM turns it into a workout on the days you pick, matching exercises you already have so their history continues (optional; choose **Claude (Anthropic)**, **ChatGPT (OpenAI)** or **Gemini (Google)** and use your own API key — Gemini has a free tier).
 
-Everything is stored on-device (localStorage) first. **Cloud sync** via Supabase is optional (see below); without it, use **Settings → Export JSON** to back up or move data between devices.
+Your data is saved on the device you're using. Sign in to **Cloud sync** (Supabase, see below) and it's kept in your own Supabase project so every device has it; without sync, use **Settings → Export JSON** to back up or move data between devices.
 
 ## Develop
 
@@ -22,7 +22,7 @@ npm run build    # type-check + production build
 npm run preview  # serve the production build
 ```
 
-Install to your phone's home screen via the browser's "Add to Home Screen" (it's a PWA).
+On your phone, use the browser's "Add to Home Screen" to open it like an app.
 
 ## AI note parsing
 
@@ -61,7 +61,7 @@ day(s) it goes on.
 
 ## Cloud sync (Supabase) — optional
 
-Syncs check-ins, exercises and workouts across devices. Offline-first: the app always works from local data and syncs in the background (after edits, on startup, when the app regains focus or comes back online). Conflicts resolve last-write-wins per record. AI API keys stay in the browser unless you turn on **Settings → Save API keys to my account**, which stores your provider, models and keys in your Supabase project (readable only when signed in as you) and syncs them to your other devices. Turning it off removes them from the server.
+Syncs check-ins, exercises and workouts across devices. The app keeps working without a connection and syncs in the background (after edits, on startup, when the app regains focus or comes back online). Conflicts resolve last-write-wins per record. AI API keys stay in the browser unless you turn on **Settings → Save API keys to my account**, which stores your provider, models and keys in your Supabase project (readable only when signed in as you) and syncs them to your other devices. Turning it off removes them from the server.
 
 One-time setup:
 

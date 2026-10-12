@@ -44,7 +44,7 @@ export default function SettingsScreen() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `climbing-tracker-backup.json`;
+    a.download = `break-your-plateau-backup.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -218,7 +218,7 @@ export default function SettingsScreen() {
       </section>
 
       <p className="pt-2 text-center text-[11px] text-slate-400">
-        Climbing Training Tracker · local-first PWA
+        © 2026 Break Your Plateau
       </p>
     </div>
   );

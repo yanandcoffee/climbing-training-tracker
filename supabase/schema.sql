@@ -1,4 +1,4 @@
--- Climbing Training Tracker — Supabase schema.
+-- Break Your Plateau — Supabase schema.
 -- Run once in the Supabase dashboard: SQL Editor → New query → paste → Run.
 -- Safe to re-run.
 --
