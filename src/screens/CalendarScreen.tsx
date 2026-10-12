@@ -36,7 +36,7 @@ export default function CalendarScreen() {
 
   return (
     <div className="space-y-4 py-4">
-      <header className="flex items-center justify-between">
+      <header className="flex min-h-16 items-center justify-between">
         <h1 className="text-xl font-bold">Calendar</h1>
         <div className="flex items-center gap-2">
           <button

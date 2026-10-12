@@ -11,11 +11,8 @@ export default function TodayScreen() {
 
   return (
     <div className="space-y-4 py-4">
-      <header className="flex items-end justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-wide text-slate-400">Today</p>
-          <h1 className="text-xl font-bold">{prettyDate(date)}</h1>
-        </div>
+      <header className="flex min-h-16 items-center justify-between">
+        <h1 className="text-xl font-bold">{prettyDate(date)}</h1>
         <Link
           to="/progress"
           className="rounded-xl bg-slate-900 px-3 py-2 text-right text-white dark:bg-slate-100 dark:text-slate-900"

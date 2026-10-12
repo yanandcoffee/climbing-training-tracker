@@ -48,7 +48,9 @@ export default function ProgressScreen() {
 
   return (
     <div className="space-y-4 py-4">
-      <h1 className="text-xl font-bold">Progress</h1>
+      <header className="flex min-h-16 items-center">
+        <h1 className="text-xl font-bold">Progress</h1>
+      </header>
 
       <div className="grid grid-cols-2 gap-3">
         <Stat label="Total readiness" value={total > 0 ? `+${total}` : `${total}`} />

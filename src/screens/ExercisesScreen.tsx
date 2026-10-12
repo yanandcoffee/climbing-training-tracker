@@ -25,7 +25,7 @@ export default function ExercisesScreen() {
 
   return (
     <div className="space-y-4 py-4">
-      <header className="flex items-center justify-between">
+      <header className="flex min-h-16 items-center justify-between">
         <h1 className="text-xl font-bold">Exercises</h1>
         <div className="flex gap-2">
           <button

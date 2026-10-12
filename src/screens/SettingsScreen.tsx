@@ -64,7 +64,9 @@ export default function SettingsScreen() {
 
   return (
     <div className="space-y-6 py-4">
-      <h1 className="text-xl font-bold">Settings</h1>
+      <header className="flex min-h-16 items-center">
+        <h1 className="text-xl font-bold">Settings</h1>
+      </header>
 
       <section className="space-y-2">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
