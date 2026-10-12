@@ -28,12 +28,18 @@ export default function ProgressScreen() {
     });
   }, [sorted, mode]);
 
-  // Exercises that have at least one logged metric value.
+  // Exercises that have been done (or logged) at least once.
   const loggedIds = useMemo(() => {
     const set = new Set<string>();
     for (const w of workouts)
       for (const we of w.exercises)
-        if (we.exerciseId && we.metrics && Object.keys(we.metrics).length)
+        // Done/partial counts (the target is taken as done), as do logged numbers.
+        if (
+          we.exerciseId &&
+          (we.status === "complete" ||
+            we.status === "partial" ||
+            (we.metrics && Object.keys(we.metrics).length))
+        )
           set.add(we.exerciseId);
     return set;
   }, [workouts]);
@@ -99,7 +105,7 @@ export default function ProgressScreen() {
           </ul>
         ) : (
           <p className="text-sm text-slate-400">
-            Log reps/weight/time on exercises in a workout to build trends.
+            Mark exercises Done in a workout (or log numbers) to build trends.
           </p>
         )}
       </section>

@@ -24,17 +24,23 @@ export type ExerciseCategory =
   | "core"
   | "mobility";
 
-export type MeasureType = "reps" | "reps_in_time" | "hold" | "duration";
+/**
+ * How a workout item is prescribed/logged. "check" = no numeric target, just
+ * do it (e.g. a warm-up stretch).
+ */
+export type MeasureType = "reps" | "reps_in_time" | "hold" | "duration" | "check";
 
+/**
+ * A building block. Holds no sets/reps — those belong to each workout it's
+ * used in (see WorkoutExercise.prescription), so the same exercise can
+ * progress week to week.
+ */
 export interface Exercise extends Synced {
   name: string;
   category: ExerciseCategory;
+  /** The usual way it's measured; each workout can override it. */
   measureType: MeasureType;
-  description?: string;
-  defaultSets?: number;
-  defaultReps?: number;
-  defaultWindowSec?: number; // for reps_in_time (e.g. 10s window)
-  defaultHoldSec?: number; // for hold/duration targets
+  description?: string; // cues
   mediaUrl?: string; // reference image/video to confirm form
   mediaType?: "image" | "video";
 }
@@ -47,7 +53,10 @@ export interface Prescription {
   windowSec?: number; // reps_in_time window
   holdSec?: number; // hold/duration target
   weight?: number;
+  weightUnit?: WeightUnit;
 }
+
+export type WeightUnit = "lb" | "kg";
 
 export interface Metrics {
   reps?: number;
@@ -59,6 +68,8 @@ export interface Metrics {
 export interface WorkoutExercise {
   id: string;
   exerciseId?: string; // links back to the library item for trends
+  sectionId?: string; // which WorkoutSection it belongs to
+  group?: string; // optional sub-heading within the section, e.g. "TFCC warm up"
   name: string;
   category: ExerciseCategory;
   measureType: MeasureType;
@@ -68,12 +79,24 @@ export interface WorkoutExercise {
   metrics?: Metrics; // what you actually did
 }
 
+/** A titled part of a workout, e.g. "Pre Climbing", with optional focus cues. */
+export interface WorkoutSection {
+  id: string;
+  title: string;
+  notes?: string[];
+}
+
 export interface Workout extends Synced {
   date: string; // 'YYYY-MM-DD'
   name?: string;
+  /** Section order + titles + cues. Items reference these by sectionId. */
+  sections?: WorkoutSection[];
   exercises: WorkoutExercise[];
 }
 
+// ---- Retired: workout templates + weekly schedule ------------------------
+// No longer used by the UI (planning happens per day in the calendar). Kept so
+// previously stored/synced data still loads.
 export type TemplateExercise = Omit<WorkoutExercise, "status" | "metrics">;
 
 export interface WorkoutTemplate extends Synced {
@@ -141,6 +164,7 @@ export const MEASURE_LABELS: Record<MeasureType, string> = {
   reps_in_time: "Max reps in time window",
   hold: "Timed hold",
   duration: "Timed activity",
+  check: "No target (just do it)",
 };
 
 export const COLOR_LABELS: Record<DayColor, string> = {

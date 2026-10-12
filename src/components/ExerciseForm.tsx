@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { Exercise, ExerciseCategory, MeasureType } from "../types";
 import { CATEGORY_LABELS, CATEGORY_ORDER, MEASURE_LABELS } from "../types";
 
-const MEASURES: MeasureType[] = ["reps", "reps_in_time", "hold", "duration"];
+const MEASURES: MeasureType[] = ["reps", "hold", "reps_in_time", "duration", "check"];
 
 export type ExerciseDraft = Omit<Exercise, "id" | "updatedAt" | "deletedAt">;
 
@@ -23,21 +23,7 @@ export default function ExerciseForm({
     initial?.measureType ?? "reps",
   );
   const [description, setDescription] = useState(initial?.description ?? "");
-  const [defaultSets, setDefaultSets] = useState<string>(
-    initial?.defaultSets?.toString() ?? "",
-  );
-  const [defaultReps, setDefaultReps] = useState<string>(
-    initial?.defaultReps?.toString() ?? "",
-  );
-  const [defaultWindowSec, setDefaultWindowSec] = useState<string>(
-    initial?.defaultWindowSec?.toString() ?? "",
-  );
-  const [defaultHoldSec, setDefaultHoldSec] = useState<string>(
-    initial?.defaultHoldSec?.toString() ?? "",
-  );
   const [mediaUrl, setMediaUrl] = useState(initial?.mediaUrl ?? "");
-
-  const num = (v: string) => (v === "" ? undefined : Number(v));
 
   const submit = () => {
     if (!name.trim()) return;
@@ -46,10 +32,6 @@ export default function ExerciseForm({
       category,
       measureType,
       description: description.trim() || undefined,
-      defaultSets: num(defaultSets),
-      defaultReps: num(defaultReps),
-      defaultWindowSec: num(defaultWindowSec),
-      defaultHoldSec: num(defaultHoldSec),
       mediaUrl: mediaUrl.trim() || undefined,
     });
   };
@@ -85,33 +67,16 @@ export default function ExerciseForm({
         >
           {MEASURES.map((m) => (
             <option key={m} value={m}>
-              {MEASURE_LABELS[m]}
+              Usually: {MEASURE_LABELS[m]}
             </option>
           ))}
         </select>
       </div>
 
-      {/* measureType-specific default prescription */}
-      <div className="grid grid-cols-2 gap-2">
-        <NumField label="Default sets" value={defaultSets} set={setDefaultSets} />
-        {measureType === "reps" && (
-          <NumField label="Default reps" value={defaultReps} set={setDefaultReps} />
-        )}
-        {measureType === "reps_in_time" && (
-          <NumField
-            label="Window (sec)"
-            value={defaultWindowSec}
-            set={setDefaultWindowSec}
-          />
-        )}
-        {(measureType === "hold" || measureType === "duration") && (
-          <NumField
-            label={measureType === "hold" ? "Hold (sec)" : "Duration (sec)"}
-            value={defaultHoldSec}
-            set={setDefaultHoldSec}
-          />
-        )}
-      </div>
+      <p className="text-[11px] text-slate-400">
+        Sets, reps and weight are set per workout, so the same exercise can progress week to week.
+        “Usually measured as” is just the default when you add it.
+      </p>
 
       <input
         value={mediaUrl}
@@ -145,28 +110,5 @@ export default function ExerciseForm({
         </button>
       </div>
     </div>
-  );
-}
-
-function NumField({
-  label,
-  value,
-  set,
-}: {
-  label: string;
-  value: string;
-  set: (v: string) => void;
-}) {
-  return (
-    <label className="flex flex-col text-[11px] text-slate-500">
-      {label}
-      <input
-        type="number"
-        inputMode="numeric"
-        value={value}
-        onChange={(e) => set(e.target.value)}
-        className="mt-0.5 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-      />
-    </label>
   );
 }

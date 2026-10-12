@@ -3,15 +3,16 @@ import { useParams, Link } from "react-router-dom";
 import { activeExercises, useActiveWorkouts, useStore } from "../store/useStore";
 import { CATEGORY_LABELS, MEASURE_LABELS } from "../types";
 import { exerciseHistory, metricOptions } from "../lib/history";
+import { prescriptionSummary } from "../lib/workoutPlan";
 import { shortDate } from "../lib/dates";
 import { ExerciseMediaView } from "../components/ExerciseMedia";
 import TrendChart from "../components/TrendChart";
 
-const STATUS_COLOR: Record<string, string> = {
-  complete: "#22c55e",
-  partial: "#f59e0b",
-  skipped: "#64748b",
-  none: "#cbd5e1",
+const STATUS_CHIP: Record<string, { label: string; cls: string }> = {
+  complete: { label: "✓ Done", cls: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300" },
+  partial: { label: "◐ Partial", cls: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300" },
+  skipped: { label: "✗ Skipped", cls: "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300" },
+  none: { label: "Planned", cls: "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400" },
 };
 
 export default function ExerciseDetailScreen() {
@@ -23,7 +24,10 @@ export default function ExerciseDetailScreen() {
     () => (id ? exerciseHistory(workouts, id) : []),
     [workouts, id],
   );
-  const options = ex ? metricOptions(ex.measureType) : [];
+  // Chart in the units of the most recent use (an exercise can be re-typed over time).
+  const latest = history[history.length - 1];
+  const chartMeasure = latest?.measureType ?? ex?.measureType ?? "reps";
+  const options = metricOptions(chartMeasure, latest?.prescription?.weightUnit ?? "lb");
   const [metricKey, setMetricKey] = useState(options[0]?.key ?? "reps");
 
   if (!ex) {
@@ -38,8 +42,10 @@ export default function ExerciseDetailScreen() {
   }
 
   const option = options.find((o) => o.key === metricKey) ?? options[0];
+  // "Done" without logged numbers counts as the target (see effectiveMetrics).
   const chartData = history
-    .map((p) => ({ date: shortDate(p.date), value: option?.value(p.metrics) }))
+    .filter((p) => p.measureType === chartMeasure)
+    .map((p) => ({ date: shortDate(p.date), value: option?.value(p.effective) }))
     .filter((d) => d.value != null) as { date: string; value: number }[];
 
   return (
@@ -90,33 +96,45 @@ export default function ExerciseDetailScreen() {
           />
         ) : (
           <p className="py-8 text-center text-sm text-slate-400">
-            No logged data yet. Log this exercise in a workout to see its trend.
+            No data yet. Mark it Done in a workout (or log numbers) to see its trend.
           </p>
         )}
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-        <h2 className="mb-3 text-base font-semibold">Completion history</h2>
+        <h2 className="mb-3 text-base font-semibold">History</h2>
         {history.length ? (
-          <div className="flex flex-wrap gap-1.5">
-            {history.map((p, i) => (
-              <div
-                key={i}
-                className="flex flex-col items-center gap-1"
-                title={`${p.date}: ${p.status}`}
-              >
-                <span
-                  className="h-6 w-6 rounded"
-                  style={{ backgroundColor: STATUS_COLOR[p.status] }}
-                />
-                <span className="text-[9px] text-slate-400">
-                  {shortDate(p.date)}
-                </span>
-              </div>
-            ))}
-          </div>
+          <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+            {[...history].reverse().map((p, i) => {
+              const chip = STATUS_CHIP[p.status] ?? STATUS_CHIP.none;
+              const logged = [
+                p.metrics.reps != null && `${p.metrics.reps} reps`,
+                p.metrics.durationSec != null && `${p.metrics.durationSec}s`,
+                p.metrics.weight != null && `${p.metrics.weight} ${p.prescription?.weightUnit ?? "lb"}`,
+                p.metrics.rpe != null && `RPE ${p.metrics.rpe}`,
+              ].filter(Boolean);
+              return (
+                <li key={i}>
+                  <Link to={`/day/${p.date}`} className="flex items-center justify-between gap-2 py-2 text-sm">
+                    <span className="w-14 shrink-0 text-xs text-slate-500">{shortDate(p.date)}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-medium">
+                        {prescriptionSummary(p.measureType, p.prescription) || "No target"}
+                      </span>
+                      {logged.length > 0 && (
+                        <span className="block text-xs text-slate-500">Logged: {logged.join(" · ")}</span>
+                      )}
+                    </span>
+                    <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium ${chip.cls}`}>
+                      {chip.label}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
         ) : (
-          <p className="text-sm text-slate-400">No sessions logged yet.</p>
+          <p className="text-sm text-slate-400">Not in any workout yet.</p>
         )}
       </section>
     </div>

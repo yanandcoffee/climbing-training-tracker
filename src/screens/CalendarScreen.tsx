@@ -11,11 +11,9 @@ import {
   startOfWeek,
   subMonths,
 } from "date-fns";
-import {
-  useActiveCheckIns,
-  useActiveSchedule,
-  useActiveWorkouts,
-} from "../store/useStore";
+import { useActiveCheckIns, useActiveWorkouts } from "../store/useStore";
+import { isEmptyWorkout } from "../lib/workoutPlan";
+import ImportNotesDialog from "../components/ImportNotesDialog";
 import { dateKey, todayKey } from "../lib/dates";
 import { COLOR_HEX } from "../lib/scoring";
 
@@ -24,17 +22,11 @@ export default function CalendarScreen() {
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
   const checkIns = useActiveCheckIns();
   const workouts = useActiveWorkouts();
-  const schedule = useActiveSchedule();
+  const [importing, setImporting] = useState(false);
 
   const checkByDate = new Map(checkIns.map((c) => [c.date, c]));
-  const workoutDates = new Set(
-    workouts.filter((w) => w.exercises.length > 0).map((w) => w.date),
-  );
-  const scheduledWeekdays = new Set(
-    schedule.filter((s) => s.weekday != null && !s.date).map((s) => s.weekday),
-  );
-  const scheduledDates = new Set(
-    schedule.filter((s) => s.date).map((s) => s.date),
+  const workoutByDate = new Map(
+    workouts.filter((w) => !isEmptyWorkout(w)).map((w) => [w.date, w]),
   );
 
   const gridStart = startOfWeek(startOfMonth(cursor));
@@ -69,6 +61,17 @@ export default function CalendarScreen() {
         </div>
       </header>
 
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs text-slate-500">Tap a day to plan, copy or edit its workout.</p>
+        <button
+          type="button"
+          onClick={() => setImporting(true)}
+          className="shrink-0 rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white"
+        >
+          📋 Import note
+        </button>
+      </div>
+
       <div className="grid grid-cols-7 gap-1 text-center text-[11px] text-slate-400">
         {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
           <div key={i}>{d}</div>
@@ -80,10 +83,9 @@ export default function CalendarScreen() {
           const key = dateKey(d);
           const inMonth = isSameMonth(d, cursor);
           const ci = checkByDate.get(key);
-          const hasWorkout =
-            workoutDates.has(key) ||
-            scheduledDates.has(key) ||
-            scheduledWeekdays.has(d.getDay());
+          const wo = workoutByDate.get(key);
+          const allDone =
+            !!wo && wo.exercises.length > 0 && wo.exercises.every((e) => e.status !== "none");
           const isToday = key === today;
           return (
             <button
@@ -108,8 +110,10 @@ export default function CalendarScreen() {
                     style={{ backgroundColor: COLOR_HEX[ci.color] }}
                   />
                 )}
-                {hasWorkout && (
-                  <span className="h-1.5 w-1.5 rounded-full bg-sky-500" />
+                {wo && (
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${allDone ? "bg-sky-500" : "border border-sky-500"}`}
+                  />
                 )}
               </span>
             </button>
@@ -122,9 +126,16 @@ export default function CalendarScreen() {
           <span className="h-2 w-2 rounded-full bg-green-500" /> check-in colour
         </span>
         <span className="flex items-center gap-1">
-          <span className="h-1.5 w-1.5 rounded-full bg-sky-500" /> workout
+          <span className="h-1.5 w-1.5 rounded-full border border-sky-500" /> planned
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="h-1.5 w-1.5 rounded-full bg-sky-500" /> all marked
         </span>
       </div>
+
+      {importing && (
+        <ImportNotesDialog initialDate={todayKey()} onClose={() => setImporting(false)} />
+      )}
     </div>
   );
 }

@@ -9,7 +9,6 @@ import DayScreen from "./screens/DayScreen";
 import ExercisesScreen from "./screens/ExercisesScreen";
 import ExerciseDetailScreen from "./screens/ExerciseDetailScreen";
 import ProgressScreen from "./screens/ProgressScreen";
-import ScheduleScreen from "./screens/ScheduleScreen";
 import SettingsScreen from "./screens/SettingsScreen";
 
 export default function App() {
@@ -32,7 +31,6 @@ export default function App() {
             <Route path="/exercises" element={<ExercisesScreen />} />
             <Route path="/exercise/:id" element={<ExerciseDetailScreen />} />
             <Route path="/progress" element={<ProgressScreen />} />
-            <Route path="/schedule" element={<ScheduleScreen />} />
             <Route path="/settings" element={<SettingsScreen />} />
           </Routes>
         ) : (

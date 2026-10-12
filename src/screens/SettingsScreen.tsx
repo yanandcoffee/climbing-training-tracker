@@ -1,5 +1,4 @@
 import { useRef, useState } from "react";
-import { Link } from "react-router-dom";
 import type { AIProvider, Snapshot } from "../types";
 import { useStore } from "../store/useStore";
 import CloudSyncSection from "../components/CloudSyncSection";
@@ -178,24 +177,12 @@ export default function SettingsScreen() {
 
       <section className="space-y-2">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-          Schedule
-        </h2>
-        <Link
-          to="/schedule"
-          className="block rounded-xl border border-slate-200 p-3 text-sm dark:border-slate-700"
-        >
-          Manage workout templates & weekly schedule →
-        </Link>
-      </section>
-
-      <section className="space-y-2">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
           Your data
         </h2>
         <p className="text-[11px] text-slate-400">
-          Everything is stored on this device. Export a backup to move it to
-          another device. Cloud sync across devices is planned for a later
-          version.
+          Everything is stored on this device (and in your account, if Cloud
+          sync is on). Export a JSON backup to keep a copy or move data
+          without sync.
         </p>
         <div className="flex gap-2">
           <button

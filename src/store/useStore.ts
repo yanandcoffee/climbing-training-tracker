@@ -10,13 +10,11 @@ import type {
   Settings,
   Snapshot,
   Workout,
-  WorkoutExercise,
   WorkoutTemplate,
-  TemplateExercise,
 } from "../types";
 import { uid } from "../lib/id";
 import { scoreForCheckIn } from "../lib/scoring";
-import { weekdayOf } from "../lib/dates";
+import { mergeBody, type WorkoutBody } from "../lib/workoutPlan";
 import { LocalStorageAdapter } from "../storage/LocalStorageAdapter";
 import {
   emptySnapshot,
@@ -33,6 +31,7 @@ interface State {
   checkIns: CheckIn[];
   exercises: Exercise[];
   workouts: Workout[];
+  /** Retired features; kept only so previously stored/synced data survives. */
   templates: WorkoutTemplate[];
   schedule: ScheduleEntry[];
   settings: Settings;
@@ -48,15 +47,14 @@ interface State {
   updateExercise: (id: string, patch: Partial<Exercise>) => void;
   deleteExercise: (id: string) => void;
 
-  addTemplate: (name: string, exercises: TemplateExercise[]) => WorkoutTemplate;
-  updateTemplate: (id: string, patch: Partial<WorkoutTemplate>) => void;
-  deleteTemplate: (id: string) => void;
-
-  addScheduleEntry: (entry: Omit<ScheduleEntry, keyof SyncedKeys>) => void;
-  deleteScheduleEntry: (id: string) => void;
-
   getOrCreateWorkoutForDate: (date: string) => Workout;
   saveWorkout: (workout: Workout) => void;
+  /** Put a workout's content (imported or copied) onto each of `dates`. */
+  applyWorkoutToDates: (
+    body: WorkoutBody,
+    dates: string[],
+    mode: "replace" | "append",
+  ) => void;
   setExerciseStatus: (
     workoutId: string,
     exerciseId: string,
@@ -159,62 +157,15 @@ export const useStore = create<State>((set, get) => {
         ),
       }),
 
-    addTemplate: (name, exercises) => {
-      const t = stamp<WorkoutTemplate>({ name, exercises });
-      persist({ templates: [...get().templates, t] });
-      return t;
-    },
-    updateTemplate: (id, patch) =>
-      persist({
-        templates: get().templates.map((t) =>
-          t.id === id ? { ...t, ...patch, updatedAt: Date.now() } : t,
-        ),
-      }),
-    deleteTemplate: (id) =>
-      persist({
-        templates: get().templates.map((t) =>
-          t.id === id ? { ...t, deletedAt: Date.now(), updatedAt: Date.now() } : t,
-        ),
-      }),
-
-    addScheduleEntry: (entry) =>
-      persist({ schedule: [...get().schedule, stamp<ScheduleEntry>(entry)] }),
-    deleteScheduleEntry: (id) =>
-      persist({
-        schedule: get().schedule.map((s) =>
-          s.id === id ? { ...s, deletedAt: Date.now(), updatedAt: Date.now() } : s,
-        ),
-      }),
-
     getOrCreateWorkoutForDate: (date) => {
       const found = get().workouts.find((w) => w.date === date && !w.deletedAt);
       if (found) return found;
 
-      // Materialize from schedule: a one-off date entry wins over weekday recurrence.
-      const sched = get().schedule.filter((s) => !s.deletedAt);
-      const dateEntry = sched.find((s) => s.date === date);
-      const wd = weekdayOf(date);
-      const weekdayEntry = sched.find((s) => s.weekday === wd && !s.date);
-      const entry = dateEntry ?? weekdayEntry;
-
-      let exercises: WorkoutExercise[] = [];
-      let name: string | undefined;
-      if (entry) {
-        const tpl = get().templates.find((t) => t.id === entry.templateId && !t.deletedAt);
-        if (tpl) {
-          name = tpl.name;
-          exercises = tpl.exercises.map((te) => ({
-            ...te,
-            id: uid(),
-            status: "none" as ExerciseStatus,
-          }));
-        }
-      }
       // Natural key (one workout per date). updatedAt 0 = "auto-created, never
       // edited": any real version from another device always wins the merge, and
       // the first genuine edit (saveWorkout) stamps a real time.
       const workout: Workout = {
-        ...stamp<Workout>({ date, name, exercises }),
+        ...stamp<Workout>({ date, sections: [], exercises: [] }),
         id: `wo-${date}`,
         updatedAt: 0,
       };
@@ -230,6 +181,33 @@ export const useStore = create<State>((set, get) => {
           ? get().workouts.map((w) => (w.id === workout.id ? updated : w))
           : [...get().workouts, updated],
       });
+    },
+
+    applyWorkoutToDates: (body, dates, mode) => {
+      const now = Date.now();
+      let workouts = get().workouts;
+      for (const date of new Set(dates)) {
+        const existing = workouts.find((w) => w.date === date && !w.deletedAt);
+        const merged = mergeBody(
+          existing
+            ? { name: existing.name, sections: existing.sections ?? [], exercises: existing.exercises }
+            : { sections: [], exercises: [] },
+          body,
+          mode,
+        );
+        const next: Workout = {
+          id: existing?.id ?? `wo-${date}`,
+          date,
+          name: merged.name,
+          sections: merged.sections,
+          exercises: merged.exercises,
+          updatedAt: now,
+        };
+        workouts = existing
+          ? workouts.map((w) => (w.id === existing.id ? next : w))
+          : [...workouts, next];
+      }
+      persist({ workouts });
     },
 
     setExerciseStatus: (workoutId, exerciseId, status) =>
@@ -325,10 +303,6 @@ export const useStore = create<State>((set, get) => {
 
 export const activeExercises = (s: State) =>
   s.exercises.filter((e) => !e.deletedAt);
-export const activeTemplates = (s: State) =>
-  s.templates.filter((t) => !t.deletedAt);
-export const activeSchedule = (s: State) =>
-  s.schedule.filter((e) => !e.deletedAt);
 export const activeCheckIns = (s: State) =>
   s.checkIns.filter((c) => !c.deletedAt);
 export const activeWorkouts = (s: State) =>
@@ -343,7 +317,5 @@ export const checkInForDate = (s: State, date: string) =>
 // shallow equality so the reference only changes when the contents actually do.
 
 export const useActiveExercises = () => useStore(useShallow(activeExercises));
-export const useActiveTemplates = () => useStore(useShallow(activeTemplates));
-export const useActiveSchedule = () => useStore(useShallow(activeSchedule));
 export const useActiveCheckIns = () => useStore(useShallow(activeCheckIns));
 export const useActiveWorkouts = () => useStore(useShallow(activeWorkouts));

@@ -4,7 +4,6 @@ import type { Exercise, ExerciseCategory } from "../types";
 import { CATEGORY_LABELS, CATEGORY_ORDER, MEASURE_LABELS } from "../types";
 import { useActiveExercises, useStore } from "../store/useStore";
 import ExerciseForm, { type ExerciseDraft } from "../components/ExerciseForm";
-import ImportNotesDialog from "../components/ImportNotesDialog";
 import { ExerciseMediaThumb } from "../components/ExerciseMedia";
 
 export default function ExercisesScreen() {
@@ -16,7 +15,6 @@ export default function ExercisesScreen() {
   const [filter, setFilter] = useState<ExerciseCategory | "all">("all");
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
-  const [importing, setImporting] = useState(false);
 
   const save = (draft: ExerciseDraft) => {
     addExercise(draft);
@@ -30,13 +28,6 @@ export default function ExercisesScreen() {
       <header className="flex items-center justify-between">
         <h1 className="text-xl font-bold">Exercises</h1>
         <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => setImporting(true)}
-            className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white dark:bg-slate-100 dark:text-slate-900"
-          >
-            Import
-          </button>
           <button
             type="button"
             onClick={() => {
@@ -65,8 +56,8 @@ export default function ExercisesScreen() {
 
       {exercises.length === 0 && !adding && (
         <p className="py-10 text-center text-sm text-slate-400">
-          No exercises yet. Tap <span className="font-semibold">+ New</span> or{" "}
-          <span className="font-semibold">Import</span> a coach's note.
+          No exercises yet. Tap <span className="font-semibold">+ New</span>, or import a
+          coach's note from any day in the Calendar — its exercises are added here.
         </p>
       )}
 
@@ -112,7 +103,6 @@ export default function ExercisesScreen() {
         })}
       </div>
 
-      {importing && <ImportNotesDialog onClose={() => setImporting(false)} />}
     </div>
   );
 }

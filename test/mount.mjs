@@ -34,7 +34,7 @@ const { createRoot } = await jiti.import("react-dom/client");
 const { MemoryRouter } = await jiti.import("react-router-dom");
 const App = (await jiti.import("../src/App")).default;
 
-const routes = ["/", "/calendar", "/exercises", "/progress", "/schedule", "/settings"];
+const routes = ["/", "/calendar", "/day/2026-10-12", "/exercises", "/progress", "/settings"];
 let failures = 0;
 
 for (const route of routes) {

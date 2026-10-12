@@ -6,13 +6,12 @@ import {
   nearestPointOption,
 } from "../src/lib/scoring";
 import { exerciseHistory, metricOptions } from "../src/lib/history";
-import { weekdayOf } from "../src/lib/dates";
 import {
   useStore,
   activeWorkouts,
   checkInForDate,
 } from "../src/store/useStore";
-import type { TemplateExercise } from "../src/types";
+import type { WorkoutBody } from "../src/lib/workoutPlan";
 
 // --- localStorage polyfill (store persists through it) ---------------------
 const mem = new Map<string, string>();
@@ -74,52 +73,52 @@ const pullups = s.addExercise({
   name: "Weighted pull-ups",
   category: "strength_conditioning",
   measureType: "reps",
-  defaultSets: 4,
-  defaultReps: 5,
 });
 const maxhang = s.addExercise({
   name: "Max hang",
   category: "strength_conditioning",
   measureType: "hold",
-  defaultSets: 5,
-  defaultHoldSec: 10,
 });
 assert(useStore.getState().exercises.length === 2, "two library exercises");
 
-const tplEx: TemplateExercise[] = [
-  {
-    id: "te1",
-    exerciseId: pullups.id,
-    name: pullups.name,
-    category: pullups.category,
-    measureType: pullups.measureType,
-    prescription: { sets: 4, reps: 5 },
-  },
-  {
-    id: "te2",
-    exerciseId: maxhang.id,
-    name: maxhang.name,
-    category: maxhang.category,
-    measureType: maxhang.measureType,
-    prescription: { sets: 5, holdSec: 10 },
-  },
-];
-const tpl = s.addTemplate("Power day", tplEx);
-
 const date = "2026-02-03";
-s.addScheduleEntry({ templateId: tpl.id, weekday: weekdayOf(date) });
 
-const workout = s.getOrCreateWorkoutForDate(date);
-assert(workout.exercises.length === 2, "workout materialized 2 exercises from template");
+// A fresh day starts empty (no templates/schedule auto-fill any more).
+const blank = s.getOrCreateWorkoutForDate(date);
+assert(blank.exercises.length === 0 && blank.updatedAt === 0, "opening a day creates an empty, untouched workout");
+
+// Apply an (imported or copied) workout to two days at once.
+const body: WorkoutBody = {
+  name: "Power day",
+  sections: [{ id: "s1", title: "Strength" }],
+  exercises: [
+    {
+      id: "a", exerciseId: pullups.id, sectionId: "s1", name: pullups.name, category: pullups.category,
+      measureType: "reps", prescription: { sets: 4, reps: 5 }, status: "complete", metrics: { reps: 99 },
+    },
+    {
+      id: "b", exerciseId: maxhang.id, sectionId: "s1", name: maxhang.name, category: maxhang.category,
+      measureType: "hold", prescription: { sets: 5, holdSec: 10 }, status: "none",
+    },
+  ],
+};
+s.applyWorkoutToDates(body, [date, "2026-02-05"], "replace");
+const workout = activeWorkouts(useStore.getState()).find((w) => w.date === date)!;
+const other = activeWorkouts(useStore.getState()).find((w) => w.date === "2026-02-05")!;
+assert(workout.exercises.length === 2 && other.exercises.length === 2, "workout applied to both selected days");
+assert(workout.id === blank.id, "applying onto an existing day reuses its record (no duplicate)");
+assert(workout.exercises.every((e) => e.status === "none" && !e.metrics), "applied copies start with fresh progress");
+assert(workout.exercises[0].prescription?.reps === 5, "…but keep the prescription");
 assert(
-  workout.exercises.every((e) => e.exerciseId),
-  "materialized exercises keep exerciseId link",
+  workout.exercises.every((e) => workout.sections!.some((sec) => sec.id === e.sectionId)),
+  "items stay linked to their (re-id'd) section",
 );
+assert(workout.exercises[0].id !== other.exercises[0].id, "each day gets its own item ids");
 
 // Re-fetch should return the SAME workout (no duplicate creation)
 const again = useStore.getState().getOrCreateWorkoutForDate(date);
 assert(again.id === workout.id, "getOrCreate is idempotent for a date");
-assert(activeWorkouts(useStore.getState()).length === 1, "exactly one workout stored");
+assert(activeWorkouts(useStore.getState()).length === 2, "exactly two workouts stored");
 
 const weId = workout.exercises[0].id;
 s.setExerciseStatus(workout.id, weId, "complete");
@@ -143,7 +142,8 @@ assert(checkInForDate(useStore.getState(), date)?.points === -2, "re-check-in up
 
 // History assembly for trends
 const hist = exerciseHistory(activeWorkouts(useStore.getState()), pullups.id);
-assert(hist.length === 1 && hist[0].metrics.reps === 5, "exercise history picks up logged metrics");
+assert(hist.length === 2 && hist[0].metrics.reps === 5, "exercise history picks up logged metrics");
+assert(hist[1].status === "none" && hist[1].prescription?.reps === 5, "history includes the planned day with its target");
 assert(
   metricOptions("reps_in_time").some((o) => o.key === "reps"),
   "reps_in_time exposes a reps metric option",
@@ -169,7 +169,7 @@ await useStore.getState().hydrate();
 {
   const st = useStore.getState();
   assert(st.exercises.length === 2, "hydrate restored exercises from localStorage");
-  assert(activeWorkouts(st).length === 1, "hydrate restored the workout");
+  assert(activeWorkouts(st).length === 2, "hydrate restored both workouts");
   assert(checkInForDate(st, date)?.points === -2, "hydrate restored check-in points");
 }
 

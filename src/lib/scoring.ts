@@ -65,8 +65,11 @@ export const COLOR_HEX: Record<DayColor, string> = {
   yellow: "#eab308",
   orange: "#f97316",
   red: "#ef4444",
-  black: "#111827",
+  // Theme-aware (see index.css): near-black in light mode, charcoal in dark
+  // mode so it doesn't vanish into the dark background.
+  black: "var(--day-black)",
 };
+
 
 /** Human-readable description of the band for slider labelling. */
 export function bandRangeLabel(color: DayColor): string {
