@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { activeExercises, useActiveWorkouts, useStore } from "../store/useStore";
 import { CATEGORY_LABELS, MEASURE_LABELS } from "../types";
-import { exerciseHistory, metricOptions } from "../lib/history";
+import { exerciseHistory, metricOptions, setsSummary } from "../lib/history";
 import { prescriptionSummary } from "../lib/workoutPlan";
 import { shortDate } from "../lib/dates";
 import { ExerciseMediaView } from "../components/ExerciseMedia";
@@ -108,9 +108,7 @@ export default function ExerciseDetailScreen() {
             {[...history].reverse().map((p, i) => {
               const chip = STATUS_CHIP[p.status] ?? STATUS_CHIP.none;
               const logged = [
-                p.metrics.reps != null && `${p.metrics.reps} reps`,
-                p.metrics.durationSec != null && `${p.metrics.durationSec}s`,
-                p.metrics.weight != null && `${p.metrics.weight} ${p.prescription?.weightUnit ?? "lb"}`,
+                p.sets.length > 0 && setsSummary(p.sets, p.prescription?.weightUnit ?? "lb"),
                 p.metrics.rpe != null && `RPE ${p.metrics.rpe}`,
               ].filter(Boolean);
               return (

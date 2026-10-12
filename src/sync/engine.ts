@@ -155,8 +155,10 @@ export const SYNCED_SETTING_KEYS = [
   "provider",
   "anthropicApiKey",
   "openaiApiKey",
+  "geminiApiKey",
   "anthropicModel",
   "openaiModel",
+  "geminiModel",
 ] as const;
 
 export type SyncedSettings = Pick<Settings, (typeof SYNCED_SETTING_KEYS)[number]>;
@@ -202,6 +204,7 @@ export function reconcileSettings(
           // Clear synced fields first so a key removed on another device is removed here too.
           anthropicApiKey: undefined,
           openaiApiKey: undefined,
+          geminiApiKey: undefined,
           ...remote.data,
           syncApiKeys: true,
           settingsUpdatedAt: remote.updated_at,

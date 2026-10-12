@@ -94,6 +94,31 @@ assert(dayWorkout().exercises[0].prescription.reps === 7, "this workout's Shrugs
 assert(lastWorkout().exercises[0].prescription.reps === 5, "last week's record still says 1 × 5");
 assert(/1 × 7/.test(host.textContent), "row summary updates to 1 × 7");
 
+console.log("Logging sets:");
+{
+  const didBlock = () => [...host.querySelectorAll("p")].find((p) => /^What you did/.test(p.textContent))?.parentElement;
+  const setInputs = (label) =>
+    [...(didBlock()?.querySelectorAll("label") ?? [])].filter((l) => l.textContent.startsWith(label)).map((l) => l.querySelector("input"));
+  assert(setInputs("Reps").length === 1 && /Set 1/.test(didBlock().textContent), "shows one blank set row to start");
+  assert(!!btn(/Fill 1 from target/), "offers to fill the sets from the target");
+  await blurWith(setInputs("Reps")[0], "7");
+  assert(dayWorkout().exercises[0].metrics.sets.length === 1 && dayWorkout().exercises[0].metrics.sets[0].reps === 7, "typing logs set 1");
+  await click(btn(/＋ Add set/));
+  assert(setInputs("Reps").length === 2, "＋ Add set adds a second row");
+  assert(dayWorkout().exercises[0].metrics.sets[1].reps === 7, "…pre-filled from the previous set");
+  await blurWith(setInputs("Reps")[1], "5");
+  assert(dayWorkout().exercises[0].metrics.sets.map((s) => s.reps).join(",") === "7,5", "second set edited to 5 (7, 5 logged)");
+  await click(btn(/＋ Add set/));
+  await click(didBlock().querySelectorAll('button[aria-label="Remove set 3"]')[0]);
+  assert(dayWorkout().exercises[0].metrics.sets.length === 2, "✕ removes a set");
+  await click(didBlock().querySelectorAll('button[aria-label="Remove set 2"]')[0]);
+  await click(didBlock().querySelectorAll('button[aria-label="Remove set 1"]')[0]);
+  assert(!dayWorkout().exercises[0].metrics.sets, "removing every set clears the log");
+  await blurWith(setInputs("Reps")[0], "7");
+  await click(btn(/＋ Add set/));
+  await blurWith(setInputs("Reps")[1], "5");
+}
+
 console.log("Adding an exercise:");
 await click(btn(/＋ Exercise/));
 assert(/Not done yet/.test(host.textContent), "library shows exercises never done");

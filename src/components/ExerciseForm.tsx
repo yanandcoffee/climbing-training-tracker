@@ -67,7 +67,7 @@ export default function ExerciseForm({
         >
           {MEASURES.map((m) => (
             <option key={m} value={m}>
-              Usually: {MEASURE_LABELS[m]}
+              {MEASURE_LABELS[m]}
             </option>
           ))}
         </select>
@@ -75,7 +75,7 @@ export default function ExerciseForm({
 
       <p className="text-[11px] text-slate-400">
         Sets, reps and weight are set per workout, so the same exercise can progress week to week.
-        “Usually measured as” is just the default when you add it.
+        The measure type is just the default when you add it to a workout.
       </p>
 
       <input

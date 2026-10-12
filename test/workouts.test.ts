@@ -11,7 +11,7 @@ import {
   prescriptionSummary,
   type WorkoutBody,
 } from "../src/lib/workoutPlan";
-import { exerciseHistory, metricOptions } from "../src/lib/history";
+import { exerciseHistory, hasLogged, metricOptions, setsSummary } from "../src/lib/history";
 import type { Exercise, Workout } from "../src/types";
 
 let failures = 0;
@@ -39,10 +39,10 @@ const modelOutput = {
       title: "Pre Climbing",
       notes: [],
       items: [
-        { name: "Palm down up and down", group: "TFCC warm up", category: "mobility", measureType: "reps", sets: 2, reps: 10 },
-        { name: "Palm up up and down", group: "TFCC warm up", category: "mobility", measureType: "reps", sets: 2, reps: 10 },
-        { name: "Band stretch pulling up", group: "TFCC warm up", category: "mobility", measureType: "reps", sets: 2, reps: 10 },
-        { name: "Band stretch pulling down", group: "TFCC warm up", category: "mobility", measureType: "reps", sets: 2, reps: 10 },
+        { name: "Palm down up and down", group: "TFCC warm up", category: "warm_up", measureType: "reps", sets: 2, reps: 10 },
+        { name: "Palm up up and down", group: "TFCC warm up", category: "warm_up", measureType: "reps", sets: 2, reps: 10 },
+        { name: "Band stretch pulling up", group: "TFCC warm up", category: "warm_up", measureType: "reps", sets: 2, reps: 10 },
+        { name: "Band stretch pulling down", group: "TFCC warm up", category: "warm_up", measureType: "reps", sets: 2, reps: 10 },
         { name: "Three finger full extension", group: "Ground finger warm up (on 10mm)", category: "strength_conditioning", measureType: "hold", sets: 3, holdSec: 10, weight: 11.25, weightUnit: "lb" },
         { name: "Four finger half crimp", group: "Ground finger warm up (on 10mm)", category: "strength_conditioning", measureType: "hold", sets: 3, holdSec: 10, weight: 10, weightUnit: "lb" },
         { name: "Four finger curls", group: "Ground finger warm up (on 10mm)", category: "strength_conditioning", measureType: "hold", sets: 3, holdSec: 10, weight: 7.5 },
@@ -83,6 +83,7 @@ const modelOutput = {
 console.log("Parse → plan:");
 const plan = sanitizePlan(modelOutput);
 assert(plan.sections.map((s) => s.title).join(" | ") === "Pre Climbing | Climbing | Climbing Focus | Post Climbing exercise", "sections kept in the coach's order; empty ones dropped");
+assert(plan.sections[0].items[0].category === "warm_up", "the new Warm up category is accepted from the model");
 assert(plan.sections[2].items.length === 0 && plan.sections[2].notes.length === 3, "focus cues kept as notes, not exercises");
 assert(plan.sections[1].items[2].measureType === "check", "unknown measure type falls back to 'just do it'");
 assert(plan.sections[0].items[6].weightUnit === "lb", "a weight without a unit defaults to lb");
@@ -205,6 +206,36 @@ console.log("Progression (Shrugs 1×5 → 1×7):");
   assert(reps.value(logged.effective) === 6, "logged numbers win over the target");
   const ahead = itemFromExercise(shrugs, [week1, week2], "2026-09-01");
   assert(ahead.prescription?.reps === 7, "planning an earlier/unknown date falls back to the latest use");
+}
+
+console.log("Per-set logging:");
+{
+  const shrugs = lib("Shrugs");
+  const wo = (metrics: Workout["exercises"][number]["metrics"], status: "complete" | "none" = "complete"): Workout => ({
+    id: "w", date: "2026-10-12", updatedAt: 1, sections: [],
+    exercises: [{ id: "i", exerciseId: shrugs.id, name: "Shrugs", category: "strength_conditioning", measureType: "reps", prescription: { sets: 3, reps: 10, weight: 20, weightUnit: "lb" }, status, metrics }],
+  });
+  const point = (metrics: Workout["exercises"][number]["metrics"]) => exerciseHistory([wo(metrics)], shrugs.id)[0];
+  const opt = (k: string) => metricOptions("reps").find((o) => o.key === k)!;
+
+  const three = point({ sets: [{ reps: 10, weight: 20 }, { reps: 10, weight: 20 }, { reps: 8, weight: 20 }] });
+  assert(opt("reps").value(three.effective) === 10, "chart reps = the best set (10, 10, 8 → 10)");
+  assert(opt("volume").value(three.effective) === 560, "volume sums the sets (10+10+8) × 20 = 560");
+  assert(three.sets.length === 3, "history keeps all three sets");
+  assert(setsSummary(three.sets) === "10 reps @ 20 lb · 10 reps @ 20 lb · 8 reps @ 20 lb", "per-set summary line");
+
+  const drop = point({ sets: [{ reps: 10, weight: 20 }, { reps: 8, weight: 15 }] });
+  assert(opt("weight").value(drop.effective) === 20, "chart weight = heaviest set");
+
+  const blank = point({ sets: [{}, { reps: 6 }, {}] });
+  assert(blank.sets.length === 1 && opt("reps").value(blank.effective) === 6, "blank rows are ignored");
+  assert(opt("weight").value(blank.effective) === 20 && opt("volume").value(blank.effective) === 120, "unlogged weight on a Done item falls back to the target weight");
+
+  const old = point({ reps: 6, weight: 18 });
+  assert(old.sets.length === 1 && opt("reps").value(old.effective) === 6 && opt("volume").value(old.effective) === 108, "older single-result logs still read as one set");
+
+  assert(point(undefined).sets.length === 0 && opt("reps").value(point(undefined).effective) === 10, "no log + Done still counts the target");
+  assert(!hasLogged({ sets: [{}] }) && hasLogged({ sets: [{ reps: 1 }] }) && hasLogged({ rpe: 7 }) && hasLogged({ reps: 3 }), "hasLogged ignores blank rows");
 }
 
 console.log(failures === 0 ? "\nWORKOUTS OK ✅" : `\n${failures} FAILURES ❌`);

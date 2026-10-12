@@ -167,6 +167,7 @@ function FilterChip({
 
 function shortCat(c: ExerciseCategory): string {
   return {
+    warm_up: "Warm up",
     on_wall_drills: "On-wall",
     strength_conditioning: "Strength",
     core: "Core",

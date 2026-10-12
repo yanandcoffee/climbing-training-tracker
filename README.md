@@ -4,12 +4,12 @@ A mobile-first, local-first PWA for tracking climbing training:
 
 - **Daily readiness check-in** — Green / Yellow / Orange / Red / Black, graded to a points score.
 - **Calendar** for planning: on any day, import a coach's note, copy a previous workout, or build one exercise by exercise.
-- **Exercises are building blocks** (name, category — _on-wall drills_, _off-the-wall strength & conditioning_, _core_, _mobility_ — cues, media). Sets/reps/time/weight live on each **workout**, so the same exercise progresses week to week (e.g. Shrugs 1×5 → 1×7). Adding an exercise pre-fills last time's numbers.
+- **Exercises are building blocks** (name, category — _warm up_, _on-wall drills_, _off-the-wall strength & conditioning_, _core_, _mobility_ — cues, media). Sets/reps/time/weight live on each **workout**, so the same exercise progresses week to week (e.g. Shrugs 1×5 → 1×7). Adding an exercise pre-fills last time's numbers.
 - **Workouts** follow the coach's structure — sections (e.g. Pre Climbing / Climbing / Post Climbing), groups (e.g. TFCC warm up), and focus cues — with complete / partial / skipped marks.
-- **Time-based exercises** (timed holds, "max reps in 10 s", timed activities), loads in lb or kg, and "just do it" items with no target.
+- **Time-based exercises** (timed holds, "max reps in 10 s", timed activities), loads in lb or kg, and no-target items (like climbing drills) that are just a checkbox.
 - **Reference media** (image/video URL) per exercise to confirm form.
 - **Trend charts** per exercise and a readiness-over-time view.
-- **Import a coach's note** — an LLM turns it into a workout on the days you pick, matching exercises you already have so their history continues (optional; choose **Claude (Anthropic)** or **ChatGPT (OpenAI)** and use your own API key).
+- **Import a coach's note** — an LLM turns it into a workout on the days you pick, matching exercises you already have so their history continues (optional; choose **Claude (Anthropic)**, **ChatGPT (OpenAI)** or **Gemini (Google)** and use your own API key — Gemini has a free tier).
 
 Everything is stored on-device (localStorage) first. **Cloud sync** via Supabase is optional (see below); without it, use **Settings → Export JSON** to back up or move data between devices.
 
@@ -26,7 +26,7 @@ Install to your phone's home screen via the browser's "Add to Home Screen" (it's
 
 ## AI note parsing
 
-In **Settings → AI note parsing**, pick a provider — **Claude (Anthropic)** or **ChatGPT (OpenAI)** — enter that provider's API key, and choose a model. Keys are stored only in your browser; calls go directly from your device to the chosen provider. Then open a day in the **Calendar** (or the Import button at its top) → **Import coach's note**. Works fully without a key via manual entry.
+In **Settings → AI note parsing**, pick a provider — **Claude (Anthropic)**, **ChatGPT (OpenAI)** or **Gemini (Google)** — enter that provider's API key, and choose a model. API use is billed separately from ChatGPT/Claude chat subscriptions; **Gemini** has a free tier (get a key at [aistudio.google.com](https://aistudio.google.com), no card needed — on the free tier Google may use what you send to improve its products, and requests are rate-limited per minute and per day). Keys are stored only in your browser; calls go directly from your device to the chosen provider. Then open a day in the **Calendar** (or the Import button at its top) → **Import coach's note**. Works fully without a key via manual entry.
 
 ### Sample coach note (for testing the parser)
 

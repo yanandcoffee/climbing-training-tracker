@@ -1,5 +1,6 @@
 import type AnthropicType from "@anthropic-ai/sdk";
 import type { ExerciseCategory, MeasureType, Settings, WeightUnit } from "../types";
+import { apiKeyFor, modelFor, providerOf, PROVIDERS } from "./providers";
 
 /** One exercise as written in the coach's note, with this session's prescription. */
 export interface ParsedItem {
@@ -29,6 +30,7 @@ export interface ParsedPlan {
 }
 
 const CATEGORIES: ExerciseCategory[] = [
+  "warm_up",
   "on_wall_drills",
   "strength_conditioning",
   "core",
@@ -104,6 +106,8 @@ const JSON_SHAPE_HINT = {
   ],
 };
 
+const JSON_ONLY = `Return ONLY a JSON object with this exact shape: ${JSON.stringify(JSON_SHAPE_HINT)}`;
+
 const SYSTEM = `You convert a climbing coach's free-form session note into one structured workout, preserving the coach's order and structure.
 
 Structure:
@@ -113,7 +117,7 @@ Structure:
 
 Each exercise ("item"):
 - name: a clean, reusable exercise name, without the sets/reps/weight (e.g. "Three finger full extension", "Shoulder shrug"). If the user message lists existing exercises and the item is the same exercise, use that exact existing name — even if the note words it differently (e.g. "Shrugs" vs "Shoulder Shrug").
-- category: on_wall_drills (movement on the wall), strength_conditioning (off-the-wall strength/power, hangboard/finger loading, pulls), core (trunk/tension), mobility (warm-ups, stretching, prehab, bands).
+- category: warm_up (anything done to prepare before climbing or lifting — warm-up sets, finger/wrist/forearm activation such as TFCC work, band warm-ups, easy movement; judge by the exercise's purpose and any warm-up heading it sits under), on_wall_drills (movement drills on the wall, including on-wall warm-up climbing drills only if they train a specific climbing skill), strength_conditioning (off-the-wall strength/power, hangboard/finger loading, pulls), core (trunk/tension), mobility (stretching, range-of-motion and prehab work that isn't a warm-up).
 - measureType + numbers:
   - reps: sets x reps ("2 set of 10" → sets 2, reps 10)
   - hold: timed hold ("3 set 10 sec" → sets 3, holdSec 10)
@@ -125,7 +129,7 @@ Each exercise ("item"):
 
 Only include fields you can infer. workoutName: a short descriptive name for the session.`;
 
-/** Dispatches to the configured AI provider (Anthropic or OpenAI). */
+/** Dispatches to the configured AI provider (Anthropic, OpenAI or Gemini). */
 export async function parseNotes(
   text: string,
   settings: Settings,
@@ -137,14 +141,13 @@ export async function parseNotes(
         .map((n) => `- ${n}`)
         .join("\n")}\n\nCoach's note:\n${text}`
     : `Coach's note:\n${text}`;
-  if (settings.provider === "openai") {
-    if (!settings.openaiApiKey)
-      throw new Error("Add your OpenAI API key in Settings first.");
-    return parseWithOpenAI(prompt, settings.openaiApiKey, settings.openaiModel);
-  }
-  if (!settings.anthropicApiKey)
-    throw new Error("Add your Anthropic API key in Settings first.");
-  return parseWithAnthropic(prompt, settings.anthropicApiKey, settings.anthropicModel);
+  const provider = providerOf(settings);
+  const apiKey = apiKeyFor(settings, provider);
+  if (!apiKey) throw new Error(`Add your ${provider.company} API key in Settings first.`);
+  const model = modelFor(settings, provider);
+  if (provider.id === "openai") return parseWithOpenAI(prompt, apiKey, model);
+  if (provider.id === "gemini") return parseWithGemini(prompt, apiKey, model);
+  return parseWithAnthropic(prompt, apiKey, model);
 }
 
 async function parseWithAnthropic(
@@ -191,7 +194,7 @@ async function parseWithOpenAI(
       model,
       response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: `${SYSTEM}\n\nReturn ONLY a JSON object with this exact shape: ${JSON.stringify(JSON_SHAPE_HINT)}` },
+        { role: "system", content: `${SYSTEM}\n\n${JSON_ONLY}` },
         { role: "user", content: text },
       ],
     });
@@ -202,10 +205,120 @@ async function parseWithOpenAI(
   return parseJson(content ?? "");
 }
 
+type GeminiPart = { text?: string; thought?: boolean };
+interface GeminiResponse {
+  candidates?: { content?: { parts?: GeminiPart[] }; finishReason?: string }[];
+  promptFeedback?: { blockReason?: string };
+  error?: { code?: number; message?: string; status?: string; details?: { reason?: string }[] };
+}
+
+/** Wait before retrying a busy Gemini model (tests set this to 0). */
+export const geminiRetry = { delayMs: 2000 };
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Google Gemini, with resilience for the free tier: a busy model (5xx) is
+ * retried once, then — like a rate-limited one (429, limits are per model) —
+ * the other Gemini models are tried in turn.
+ */
+async function parseWithGemini(
+  text: string,
+  apiKey: string,
+  model: string,
+): Promise<ParsedPlan> {
+  const models = [model, ...PROVIDERS.gemini.models.map((m) => m.id).filter((m) => m !== model)];
+  let last = { status: 0, body: {} as GeminiResponse };
+  for (const m of models) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const { res, body } = await callGemini(text, apiKey, m);
+      if (res.ok) return readGemini(body);
+      last = { status: res.status, body };
+      const busy = res.status >= 500;
+      if (!busy) break; // only a busy model is worth retrying as-is
+      if (attempt === 0) await sleep(geminiRetry.delayMs);
+    }
+    // Move on to the next model only for capacity problems; anything else
+    // (bad key, blocked note, …) would fail the same way everywhere.
+    if (!(last.status >= 500 || last.status === 429)) break;
+  }
+  if (last.status >= 500) {
+    throw new Error(
+      `Gemini is overloaded right now (${last.status}) — tried ${models.length} model${models.length > 1 ? "s" : ""}, twice each. Wait a minute and try again, or switch provider.`,
+    );
+  }
+  throw new Error(geminiError(last.status, last.body));
+}
+
+/** Gemini's REST API (no SDK): JSON mode plus the shape hint; sanitizePlan validates. */
+async function callGemini(text: string, apiKey: string, model: string) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+  const call = async (jsonMode: boolean) => {
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: `${SYSTEM}\n\n${JSON_ONLY}` }] },
+          contents: [{ role: "user", parts: [{ text }] }],
+          ...(jsonMode ? { generationConfig: { responseMimeType: "application/json" } } : {}),
+        }),
+      });
+    } catch {
+      throw new Error("Network error reaching Google Gemini. Check your connection.");
+    }
+    const body = (await res.json().catch(() => ({}))) as GeminiResponse;
+    return { res, body };
+  };
+
+  let { res, body } = await call(true);
+  // If Google ever stops accepting the JSON-mode field, fall back to the prompt alone.
+  if (res.status === 400 && /unknown name|invalid json payload/i.test(body.error?.message ?? "")) {
+    ({ res, body } = await call(false));
+  }
+  return { res, body };
+}
+
+function readGemini(body: GeminiResponse): ParsedPlan {
+  if (body.promptFeedback?.blockReason) {
+    throw new Error(`Gemini declined to read this note (${body.promptFeedback.blockReason}). Try editing it, or build the workout by hand.`);
+  }
+  const cand = body.candidates?.[0];
+  const out = (cand?.content?.parts ?? [])
+    .filter((p) => typeof p.text === "string" && !p.thought)
+    .map((p) => p.text)
+    .join("");
+  if (!out && cand?.finishReason && cand.finishReason !== "STOP") {
+    throw new Error(`Gemini stopped without an answer (${cand.finishReason}). Try again or try another model.`);
+  }
+  if (cand?.finishReason === "MAX_TOKENS") {
+    throw new Error("Gemini's answer was cut off — the note may be too long. Try splitting it.");
+  }
+  return parseJson(out);
+}
+
+export function geminiError(status: number, body: GeminiResponse): string {
+  const message = body.error?.message ?? "";
+  const keyInvalid =
+    /api key not valid|api_key_invalid/i.test(message) ||
+    !!body.error?.details?.some((d) => d.reason === "API_KEY_INVALID");
+  if (keyInvalid || status === 401) return "Your Gemini API key was rejected. Check it in Settings.";
+  if (status === 403) return "This Gemini key can't use that model (403). Check the key or pick another model.";
+  if (status === 404) return "That Gemini model wasn't found (404). Pick another in Settings.";
+  if (status === 429) {
+    return "Gemini free-tier limit reached — it allows a limited number of requests per minute and per day. Wait a minute (or until tomorrow if it's the daily limit) and try again.";
+  }
+  if (status >= 500) return `Gemini is having trouble right now (${status}). Try again in a moment.`;
+  return `Gemini error: ${message || `HTTP ${status}`}`;
+}
+
 function parseJson(raw: string): ParsedPlan {
   let data: unknown;
+  // Tolerate a ```json fence around the object (models without JSON mode do this).
+  const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
   try {
-    data = JSON.parse(raw);
+    data = JSON.parse(cleaned);
   } catch {
     throw new Error("Could not read the model's response. Please try again.");
   }

@@ -3,6 +3,7 @@ import type { Exercise } from "../types";
 import { CATEGORY_LABELS } from "../types";
 import { useActiveExercises, useActiveWorkouts, useStore } from "../store/useStore";
 import { parseNotes, type ParsedItem, type ParsedPlan } from "../lib/parseNotes";
+import { PROVIDER_ORDER, PROVIDERS, apiKeyFor, providerOf } from "../lib/providers";
 import { isEmptyWorkout, prescriptionSummary } from "../lib/workoutPlan";
 import { defaultMapping, itemKey, NEW_EXERCISE as NEW, planToBody } from "../lib/importPlan";
 import { shortDate } from "../lib/dates";
@@ -22,9 +23,8 @@ export default function ImportNotesDialog({
   const library = useActiveExercises();
   const workouts = useActiveWorkouts();
 
-  const hasKey =
-    settings.provider === "openai" ? !!settings.openaiApiKey : !!settings.anthropicApiKey;
-  const providerLabel = settings.provider === "openai" ? "OpenAI" : "Anthropic";
+  const provider = providerOf(settings);
+  const hasKey = !!apiKeyFor(settings, provider);
 
   const [text, setText] = useState("");
   const [status, setStatus] = useState<"input" | "loading" | "review">("input");
@@ -84,7 +84,7 @@ export default function ImportNotesDialog({
         {status !== "review" && (
           <>
             <div className="mb-3 flex gap-2" role="radiogroup" aria-label="AI provider">
-              {(["anthropic", "openai"] as const).map((p) => (
+              {PROVIDER_ORDER.map((p) => (
                 <button
                   key={p}
                   type="button"
@@ -97,13 +97,13 @@ export default function ImportNotesDialog({
                       : "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200"
                   }`}
                 >
-                  {p === "anthropic" ? "Claude" : "ChatGPT"}
+                  {PROVIDERS[p].name}
                 </button>
               ))}
             </div>
             {!hasKey && (
               <p className="mb-3 rounded-lg bg-amber-100 p-2 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
-                No {providerLabel} API key set. Add one in Settings (or switch provider), or
+                No {provider.company} API key set. Add one in Settings (or switch provider), or
                 build the workout by hand.
               </p>
             )}
@@ -125,7 +125,7 @@ export default function ImportNotesDialog({
               disabled={status === "loading" || !text.trim() || !hasKey}
               className="mt-3 w-full rounded-xl bg-sky-600 px-4 py-2.5 font-medium text-white disabled:opacity-40"
             >
-              {status === "loading" ? "Reading note…" : `Read with ${providerLabel}`}
+              {status === "loading" ? "Reading note…" : `Read with ${provider.name}`}
             </button>
           </>
         )}

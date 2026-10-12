@@ -1,19 +1,9 @@
 import { useRef, useState } from "react";
-import type { AIProvider, Snapshot } from "../types";
+import type { Snapshot } from "../types";
 import { useStore } from "../store/useStore";
 import CloudSyncSection from "../components/CloudSyncSection";
 import { useSync } from "../sync/useSync";
-
-const ANTHROPIC_MODELS = [
-  { id: "claude-opus-4-8", label: "Opus 4.8 (most capable)" },
-  { id: "claude-sonnet-5", label: "Sonnet 5 (balanced)" },
-  { id: "claude-haiku-4-5", label: "Haiku 4.5 (fast / cheap)" },
-];
-const OPENAI_MODELS = [
-  { id: "gpt-4.1", label: "GPT-4.1 (capable)" },
-  { id: "gpt-5", label: "GPT-5 (most capable)" },
-  { id: "gpt-4o-mini", label: "GPT-4o mini (fast / cheap)" },
-];
+import { PROVIDER_ORDER, PROVIDERS, modelFor, providerOf } from "../lib/providers";
 
 export default function SettingsScreen() {
   const settings = useStore((s) => s.settings);
@@ -25,33 +15,28 @@ export default function SettingsScreen() {
   const syncStatus = useSync((s) => s.status);
   const signedIn = syncStatus !== "unconfigured" && syncStatus !== "signed_out";
 
-  const [anthKey, setAnthKey] = useState(settings.anthropicApiKey ?? "");
-  const [oaKey, setOaKey] = useState(settings.openaiApiKey ?? "");
+  // Draft key per provider; committed on blur.
+  const storedKeyMap = () =>
+    Object.fromEntries(PROVIDER_ORDER.map((p) => [p, settings[PROVIDERS[p].keyField] ?? ""]));
+  const [keys, setKeys] = useState<Record<string, string>>(storedKeyMap);
   // Refresh the fields when keys change underneath us (e.g. pulled from the account).
-  const storedKeys = `${settings.anthropicApiKey ?? ""}\n${settings.openaiApiKey ?? ""}`;
+  const storedKeys = PROVIDER_ORDER.map((p) => settings[PROVIDERS[p].keyField] ?? "").join("\n");
   const [seenKeys, setSeenKeys] = useState(storedKeys);
   if (storedKeys !== seenKeys) {
     setSeenKeys(storedKeys);
-    setAnthKey(settings.anthropicApiKey ?? "");
-    setOaKey(settings.openaiApiKey ?? "");
+    setKeys(storedKeyMap());
   }
   const [showKey, setShowKey] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const isOpenAI = settings.provider === "openai";
-  const keyVal = isOpenAI ? oaKey : anthKey;
-  const setKeyVal = isOpenAI ? setOaKey : setAnthKey;
-  const commitKey = () =>
-    setSettings(
-      isOpenAI
-        ? { openaiApiKey: oaKey.trim() || undefined }
-        : { anthropicApiKey: anthKey.trim() || undefined },
-    );
-  const models = isOpenAI ? OPENAI_MODELS : ANTHROPIC_MODELS;
-  const modelVal = isOpenAI ? settings.openaiModel : settings.anthropicModel;
-  const setModelVal = (m: string) =>
-    setSettings(isOpenAI ? { openaiModel: m } : { anthropicModel: m });
+  const provider = providerOf(settings);
+  const keyVal = keys[provider.id] ?? "";
+  const setKeyVal = (v: string) => setKeys((k) => ({ ...k, [provider.id]: v }));
+  const commitKey = () => setSettings({ [provider.keyField]: keyVal.trim() || undefined });
+  const models = provider.models;
+  const modelVal = modelFor(settings, provider);
+  const setModelVal = (m: string) => setSettings({ [provider.modelField]: m });
 
   const doExport = () => {
     const data = JSON.stringify(exportSnapshot(), null, 2);
@@ -87,25 +72,25 @@ export default function SettingsScreen() {
         </h2>
 
         <label className="block text-sm">Provider</label>
-        <div className="flex gap-2">
-          {(["anthropic", "openai"] as AIProvider[]).map((p) => (
+        <div className="flex flex-wrap gap-2">
+          {PROVIDER_ORDER.map((p) => (
             <button
               key={p}
               type="button"
               onClick={() => setSettings({ provider: p })}
-              className={`flex-1 rounded-xl px-3 py-2 text-sm font-medium ${
+              className={`flex-1 whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium ${
                 settings.provider === p
                   ? "bg-sky-600 text-white"
                   : "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200"
               }`}
             >
-              {p === "anthropic" ? "Claude (Anthropic)" : "ChatGPT (OpenAI)"}
+              {PROVIDERS[p].label}
             </button>
           ))}
         </div>
 
         <label className="mt-2 block text-sm">
-          {isOpenAI ? "OpenAI API key" : "Anthropic API key"}
+          {provider.company} API key
         </label>
         <div className="flex gap-2">
           <input
@@ -113,7 +98,7 @@ export default function SettingsScreen() {
             value={keyVal}
             onChange={(e) => setKeyVal(e.target.value)}
             onBlur={commitKey}
-            placeholder={isOpenAI ? "sk-…" : "sk-ant-…"}
+            placeholder={provider.keyPlaceholder}
             className={input}
             autoComplete="off"
             spellCheck={false}
@@ -130,9 +115,14 @@ export default function SettingsScreen() {
           {settings.syncApiKeys
             ? "Saved in this browser and to your account."
             : "Stored only in this browser."}{" "}
-          Used to call the {isOpenAI ? "OpenAI" : "Anthropic"} API directly from
-          your device. The app works fully without it (manual entry).
+          Used to call the {provider.company} API directly from your device.
+          The app works fully without it (manual entry).
         </p>
+        {provider.help && (
+          <p className="rounded-lg bg-sky-50 p-2 text-[11px] text-sky-800 dark:bg-sky-950 dark:text-sky-200">
+            {provider.help}
+          </p>
+        )}
 
         {signedIn ? (
           <label className="flex items-start gap-3 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
@@ -217,8 +207,7 @@ export default function SettingsScreen() {
           onClick={() => {
             if (confirm("Delete ALL data on this device? This cannot be undone.")) {
               clearAll();
-              setAnthKey("");
-              setOaKey("");
+              setKeys({});
               setMsg("All data cleared.");
             }
           }}

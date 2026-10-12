@@ -19,6 +19,7 @@ export interface CheckIn extends Synced {
 }
 
 export type ExerciseCategory =
+  | "warm_up"
   | "on_wall_drills"
   | "strength_conditioning"
   | "core"
@@ -58,11 +59,22 @@ export interface Prescription {
 
 export type WeightUnit = "lb" | "kg";
 
-export interface Metrics {
+/** What was done in one set. */
+export interface SetResult {
   reps?: number;
   weight?: number;
-  rpe?: number; // rate of perceived exertion 1-10
   durationSec?: number; // seconds held / done
+}
+
+export interface Metrics {
+  /** Per-set results (new). */
+  sets?: SetResult[];
+  // Single-result fields: written by older versions as the one result for the
+  // whole exercise; still read, and used as the chart value when sets exist.
+  reps?: number;
+  weight?: number;
+  durationSec?: number;
+  rpe?: number; // rate of perceived exertion 1-10 (whole exercise)
 }
 
 export interface WorkoutExercise {
@@ -116,14 +128,16 @@ export interface SyncConfig {
   // room for url / anon key / userId when sync is implemented
 }
 
-export type AIProvider = "anthropic" | "openai";
+export type AIProvider = "anthropic" | "openai" | "gemini";
 
 export interface Settings {
   provider: AIProvider;
   anthropicApiKey?: string;
   openaiApiKey?: string;
+  geminiApiKey?: string;
   anthropicModel: string;
   openaiModel: string;
+  geminiModel?: string;
   sync?: SyncConfig;
   /**
    * Save provider/models/API keys to the signed-in Supabase account.
@@ -146,6 +160,7 @@ export interface Snapshot {
 }
 
 export const CATEGORY_ORDER: ExerciseCategory[] = [
+  "warm_up",
   "on_wall_drills",
   "strength_conditioning",
   "core",
@@ -153,6 +168,7 @@ export const CATEGORY_ORDER: ExerciseCategory[] = [
 ];
 
 export const CATEGORY_LABELS: Record<ExerciseCategory, string> = {
+  warm_up: "Warm up",
   on_wall_drills: "On-wall climbing drills",
   strength_conditioning: "Off-the-wall strength & conditioning",
   core: "Core training",
@@ -164,7 +180,7 @@ export const MEASURE_LABELS: Record<MeasureType, string> = {
   reps_in_time: "Max reps in time window",
   hold: "Timed hold",
   duration: "Timed activity",
-  check: "No target (just do it)",
+  check: "Climbing drill",
 };
 
 export const COLOR_LABELS: Record<DayColor, string> = {

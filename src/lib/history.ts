@@ -3,6 +3,7 @@ import type {
   MeasureType,
   Metrics,
   Prescription,
+  SetResult,
   WeightUnit,
   Workout,
 } from "../types";
@@ -13,8 +14,58 @@ export interface HistoryPoint {
   measureType: MeasureType;
   prescription?: Prescription;
   metrics: Metrics; // as logged
+  /** Logged per-set results (blank rows removed). */
+  sets: SetResult[];
   /** Logged metrics, filled in from the prescription when completed as prescribed. */
   effective: Metrics;
+}
+
+const isFilled = (s: SetResult) => s.reps != null || s.weight != null || s.durationSec != null;
+
+/** Logged per-set results; an older single result counts as one set. Blank rows are dropped. */
+export function loggedSets(m: Metrics | undefined): SetResult[] {
+  if (!m) return [];
+  const sets = m.sets?.length ? m.sets : [{ reps: m.reps, weight: m.weight, durationSec: m.durationSec }];
+  return sets.filter(isFilled);
+}
+
+export function hasLogged(m: Metrics | undefined): boolean {
+  return !!m && (loggedSets(m).length > 0 || m.rpe != null);
+}
+
+/** One line per set, e.g. "10 reps @ 11.25 lb · 8 reps @ 11.25 lb". */
+export function setsSummary(sets: SetResult[], unit: WeightUnit = "lb"): string {
+  return sets
+    .map((s) =>
+      [
+        s.reps != null && `${s.reps} reps`,
+        s.durationSec != null && `${s.durationSec}s`,
+        s.weight != null && `${s.weight} ${unit}`,
+      ]
+        .filter(Boolean)
+        .join(" @ "),
+    )
+    .join(" · ");
+}
+
+/**
+ * Collapse per-set results to one value each for charting: the best set
+ * (highest reps / weight / seconds). Volume is summed over the sets instead.
+ */
+export function flattenMetrics(m: Metrics): Metrics {
+  const sets = loggedSets(m);
+  if (!sets.length) return { ...m };
+  const best = (k: keyof SetResult) => {
+    const v = sets.map((s) => s[k]).filter((n): n is number => n != null);
+    return v.length ? Math.max(...v) : undefined;
+  };
+  return {
+    rpe: m.rpe,
+    sets,
+    reps: best("reps"),
+    weight: best("weight"),
+    durationSec: best("durationSec"),
+  };
 }
 
 /**
@@ -26,8 +77,9 @@ export function effectiveMetrics(
   status: ExerciseStatus,
   measureType: MeasureType,
   p: Prescription | undefined,
-  m: Metrics,
+  raw: Metrics,
 ): Metrics {
+  const m = flattenMetrics(raw);
   if (status !== "complete" || !p) return m;
   const out: Metrics = { ...m };
   if (out.weight == null && p.weight != null) out.weight = p.weight;
@@ -50,6 +102,7 @@ export function exerciseHistory(workouts: Workout[], exerciseId: string): Histor
         measureType: we.measureType,
         prescription: we.prescription,
         metrics,
+        sets: loggedSets(metrics),
         effective: effectiveMetrics(we.status, we.measureType, we.prescription, metrics),
       });
     }
@@ -75,7 +128,13 @@ export function metricOptions(measureType: MeasureType, weightUnit: WeightUnit =
           key: "volume",
           label: "Volume",
           unit: `${weightUnit}·reps`,
-          value: (m) => (m.reps != null && m.weight != null ? m.reps * m.weight : undefined),
+          value: (m) => {
+            const sets = m.sets?.length ? m.sets : [{ reps: m.reps, weight: m.weight }];
+            const parts = sets
+              .map((s) => (s.reps != null && (s.weight ?? m.weight) != null ? s.reps * (s.weight ?? m.weight)! : undefined))
+              .filter((n): n is number => n != null);
+            return parts.length ? parts.reduce((a, b) => a + b, 0) : undefined;
+          },
         },
         rpe,
       ];

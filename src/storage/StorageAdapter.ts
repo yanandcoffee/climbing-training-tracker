@@ -50,6 +50,7 @@ export function emptySnapshot(): Snapshot {
       provider: "anthropic",
       anthropicModel: "claude-opus-4-8",
       openaiModel: "gpt-4.1",
+      geminiModel: "gemini-3.8-flash",
     },
   };
 }

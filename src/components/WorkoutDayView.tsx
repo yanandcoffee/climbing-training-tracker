@@ -4,6 +4,7 @@ import type {
   Exercise,
   ExerciseStatus,
   Metrics,
+  SetResult,
   Workout,
   WorkoutExercise,
   WorkoutSection,
@@ -16,6 +17,7 @@ import {
   prescriptionSummary,
 } from "../lib/workoutPlan";
 import { shortDate } from "../lib/dates";
+import { loggedSets } from "../lib/history";
 import { ExerciseMediaThumb } from "./ExerciseMedia";
 import AddExercisePanel from "./AddExercisePanel";
 import PrescriptionEditor from "./PrescriptionEditor";
@@ -470,45 +472,123 @@ function ExerciseRow({
   );
 }
 
+/** Per-set log: one row per set, so 10 / 10 / 8 can be recorded as it happened. */
 function MetricsEntry({ we, onMetrics }: { we: WorkoutExercise; onMetrics: (m: Metrics) => void }) {
   const m = we.metrics ?? {};
   const unit = we.prescription?.weightUnit ?? "lb";
+  const p = we.prescription;
   const num = (v: string): number | undefined => (v.trim() === "" ? undefined : Number(v));
 
-  const field = (label: string, key: keyof Metrics, placeholder?: string) => (
+  const logged = loggedSets(m);
+  // Always show at least one (blank) row so a single result is still one step.
+  const rows: SetResult[] = logged.length ? logged : [{}];
+  const showReps = we.measureType === "reps" || we.measureType === "reps_in_time";
+  const showSeconds = we.measureType === "hold" || we.measureType === "duration";
+  const showWeight = we.measureType === "reps" || showSeconds;
+  const hasSetFields = showReps || showSeconds;
+
+  // Writing sets replaces any older single-result fields so nothing is counted twice.
+  const writeSets = (next: SetResult[]) =>
+    onMetrics({
+      sets: next.length ? next : undefined,
+      reps: undefined,
+      weight: undefined,
+      durationSec: undefined,
+    });
+
+  const fromTarget = (): SetResult => ({
+    reps: showReps ? p?.reps : undefined,
+    durationSec: showSeconds ? p?.holdSec : undefined,
+    weight: showWeight ? p?.weight : undefined,
+  });
+  const canFill = !logged.length && (p?.reps != null || p?.holdSec != null);
+  const fillFromTarget = () =>
+    writeSets(Array.from({ length: Math.max(1, p?.sets ?? 1) }, fromTarget));
+  const addSet = () => {
+    const prev = rows[rows.length - 1];
+    writeSets([...logged, logged.length ? { ...prev } : fromTarget()]);
+  };
+  const setField = (i: number, key: keyof SetResult, v: number | undefined) =>
+    writeSets(rows.map((r, j) => (j === i ? { ...r, [key]: v } : r)));
+
+  const input =
+    "mt-0.5 w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100";
+
+  const setInput = (i: number, label: string, key: keyof SetResult, placeholder?: string) => (
     <label className="flex flex-col text-[11px] text-slate-500">
       {label}
       <input
-        key={`${we.id}-m-${key}-${m[key] ?? ""}`}
+        key={`${we.id}-s${i}-${key}-${rows[i][key] ?? ""}`}
         type="number"
         inputMode="decimal"
-        defaultValue={m[key] ?? ""}
+        defaultValue={rows[i][key] ?? ""}
         placeholder={placeholder}
         onBlur={(e) => {
           const v = num(e.target.value);
-          if (v !== m[key]) onMetrics({ [key]: v } as Metrics);
+          if (v !== rows[i][key]) setField(i, key, v);
         }}
-        className="mt-0.5 w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+        className={input}
       />
     </label>
   );
 
   return (
-    <div className="flex flex-wrap gap-3">
-      {we.measureType === "reps" && (
-        <>
-          {field("Reps", "reps")}
-          {field(`Weight ${unit}`, "weight")}
-        </>
+    <div className="space-y-2">
+      {hasSetFields && (
+        <div className="space-y-2">
+          {rows.map((_, i) => (
+            <div key={i} className="flex flex-wrap items-end gap-3">
+              <span className="w-10 pb-1.5 text-xs font-medium text-slate-500">Set {i + 1}</span>
+              {showReps && setInput(i, we.measureType === "reps_in_time" ? `Reps / ${p?.windowSec ?? 10}s` : "Reps", "reps")}
+              {showSeconds && setInput(i, "Seconds", "durationSec")}
+              {showWeight && setInput(i, `Weight ${unit}`, "weight")}
+              {logged.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => writeSets(logged.filter((_, j) => j !== i))}
+                  className="pb-1.5 text-xs text-red-600 dark:text-red-400"
+                  aria-label={`Remove set ${i + 1}`}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          ))}
+          <div className="flex flex-wrap gap-2 text-xs">
+            <button
+              type="button"
+              onClick={addSet}
+              className="rounded-lg bg-white px-2.5 py-1 font-medium text-sky-600 dark:bg-slate-900 dark:text-sky-400"
+            >
+              ＋ Add set
+            </button>
+            {canFill && (
+              <button
+                type="button"
+                onClick={fillFromTarget}
+                className="rounded-lg bg-white px-2.5 py-1 text-slate-600 dark:bg-slate-900 dark:text-slate-300"
+              >
+                Fill {Math.max(1, p?.sets ?? 1)} from target
+              </button>
+            )}
+          </div>
+        </div>
       )}
-      {we.measureType === "reps_in_time" && field(`Reps / ${we.prescription?.windowSec ?? 10}s`, "reps")}
-      {(we.measureType === "hold" || we.measureType === "duration") && (
-        <>
-          {field("Seconds", "durationSec")}
-          {field(`Weight ${unit}`, "weight")}
-        </>
-      )}
-      {field("RPE", "rpe", "1-10")}
+      <label className="flex flex-col text-[11px] text-slate-500">
+        RPE (overall)
+        <input
+          key={`${we.id}-rpe-${m.rpe ?? ""}`}
+          type="number"
+          inputMode="decimal"
+          defaultValue={m.rpe ?? ""}
+          placeholder="1-10"
+          onBlur={(e) => {
+            const v = num(e.target.value);
+            if (v !== m.rpe) onMetrics({ rpe: v });
+          }}
+          className={input}
+        />
+      </label>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { hasLogged } from "../lib/history";
 import { Link } from "react-router-dom";
 import {
   useActiveCheckIns,
@@ -38,7 +39,7 @@ export default function ProgressScreen() {
           we.exerciseId &&
           (we.status === "complete" ||
             we.status === "partial" ||
-            (we.metrics && Object.keys(we.metrics).length))
+            hasLogged(we.metrics))
         )
           set.add(we.exerciseId);
     return set;
