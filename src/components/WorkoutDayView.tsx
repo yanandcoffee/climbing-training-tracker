@@ -11,7 +11,9 @@ import type {
 } from "../types";
 import { activeWorkouts, useActiveExercises, useActiveWorkouts, useStore } from "../store/useStore";
 import {
+  findSectionByTitle,
   groupItems,
+  mergeDuplicateSections,
   isEmptyWorkout,
   lastUseOf,
   prescriptionSummary,
@@ -46,6 +48,13 @@ export default function WorkoutDayView({ date }: { date: string }) {
   useEffect(() => {
     getOrCreate(date);
   }, [date, getOrCreate]);
+
+  // Repair workouts that ended up with two sections of the same name.
+  useEffect(() => {
+    if (!workout) return;
+    const merged = mergeDuplicateSections({ ...workout, sections: workout.sections ?? [] });
+    if (merged) saveWorkout(merged);
+  }, [workout, saveWorkout]);
 
   if (!workout) {
     return (
@@ -112,21 +121,33 @@ export default function WorkoutDayView({ date }: { date: string }) {
     </>
   );
 
+  // Keyed so it stays mounted (keeping its state) when the first add turns
+  // an empty day into a workout and the layout around it changes.
   const addPanel = adding && (
     <AddExercisePanel
+      key="add-panel"
       date={date}
       library={library}
       workouts={workouts}
       sections={sections}
+      items={workout.exercises}
       defaultSectionId={adding.sectionId}
       onCreateExercise={(data) => addExercise(data)}
       onAdd={(item, newSection) => {
-        update((w) => ({
-          ...w,
-          sections: newSection ? [...(w.sections ?? []), newSection] : w.sections,
-          exercises: [...w.exercises, item],
-        }));
+        let usedId = item.sectionId;
+        update((w) => {
+          const existing = w.sections ?? [];
+          // Never create a second section with the same name — reuse it.
+          const same = newSection && findSectionByTitle(existing, newSection.title);
+          if (same) usedId = same.id;
+          return {
+            ...w,
+            sections: newSection && !same ? [...existing, newSection] : w.sections,
+            exercises: [...w.exercises, { ...item, sectionId: usedId }],
+          };
+        });
         setOpenId(item.id);
+        return usedId;
       }}
       onClose={() => setAdding(null)}
     />

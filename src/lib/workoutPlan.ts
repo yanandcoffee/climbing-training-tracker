@@ -85,6 +85,39 @@ export function mergeBody(
   };
 }
 
+/** The section with this title (case-insensitive), if any. */
+export function findSectionByTitle(sections: WorkoutSection[], title: string): WorkoutSection | undefined {
+  return sections.find((s) => norm(s.title) === norm(title));
+}
+
+/**
+ * Merge sections that share a title (case-insensitive): the first one is kept
+ * and gets the others' items and cues. Returns null when there's nothing to merge.
+ */
+export function mergeDuplicateSections<T extends WorkoutBody>(body: T): T | null {
+  const keep: WorkoutSection[] = [];
+  const remap = new Map<string, string>();
+  for (const s of body.sections) {
+    const match = keep.find((k) => norm(k.title) === norm(s.title));
+    if (!match) {
+      keep.push({ ...s });
+      continue;
+    }
+    remap.set(s.id, match.id);
+    const notes = [...(match.notes ?? [])];
+    for (const n of s.notes ?? []) if (!notes.includes(n)) notes.push(n);
+    match.notes = notes.length ? notes : undefined;
+  }
+  if (!remap.size) return null;
+  return {
+    ...body,
+    sections: keep,
+    exercises: body.exercises.map((e) =>
+      e.sectionId && remap.has(e.sectionId) ? { ...e, sectionId: remap.get(e.sectionId) } : e,
+    ),
+  };
+}
+
 export interface LastUse {
   date: string;
   measureType: MeasureType;

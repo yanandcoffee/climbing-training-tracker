@@ -121,6 +121,10 @@ console.log("Logging sets:");
 
 console.log("Adding an exercise:");
 await click(btn(/＋ Exercise/));
+assert(/Adding to the workout \(no section\)/.test(host.textContent), "the main ＋ Exercise adds outside any section");
+await click(btn(/^Done$/));
+await click(btn(/^＋ Add$/)); // the section's own add button
+assert(/Adding to Post Climbing exercise/.test(host.textContent.replace(/\s+/g, " ")), "a section's ＋ Add targets that section");
 assert(/Not done yet/.test(host.textContent), "library shows exercises never done");
 assert(/Last 5 Oct: 1 × 5/.test(host.textContent), "…and last time's target for ones that were");
 await click(buttons().find((b) => b.textContent.startsWith("Pull ups")));
@@ -133,5 +137,73 @@ assert(dayWorkout().exercises[0].status === "complete", "tapping Done marks it c
 assert(/1\/2 done/.test(host.textContent), "header shows 1/2 done");
 
 await act(async () => root.unmount());
+
+console.log("Building an empty day with a new section:");
+{
+  const DAY2 = "2026-10-14";
+  const host2 = document.createElement("div");
+  document.body.appendChild(host2);
+  const root2 = createRoot(host2);
+  await act(async () =>
+    root2.render(React.createElement(MemoryRouter, null, React.createElement(WorkoutDayView, { date: DAY2 }))),
+  );
+  const b2 = (re) => [...host2.querySelectorAll("button")].find((b) => re.test(b.textContent));
+  const day2 = () => activeWorkouts(useStore.getState()).find((w) => w.date === DAY2);
+  const setVal = (el, v) =>
+    act(async () => {
+      const proto = el.tagName === "SELECT" ? dom.window.HTMLSelectElement.prototype : dom.window.HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(proto, "value").set.call(el, v);
+      el.dispatchEvent(new dom.window.Event(el.tagName === "SELECT" ? "change" : "input", { bubbles: true }));
+    });
+  const byPlaceholder = (p) => host2.querySelector(`input[placeholder^="${p}"]`);
+  const sectionSelect = () =>
+    [...host2.querySelectorAll("label")].find((l) => l.textContent.startsWith("Section of this workout"))?.querySelector("select");
+  const createInSection = async (exName, sectionValue, newTitle) => {
+    await click(b2(/^New exercise$/));
+    await setVal(byPlaceholder("Exercise name"), exName);
+    await setVal(sectionSelect(), sectionValue);
+    if (newTitle != null) await setVal(byPlaceholder("Section name"), newTitle);
+    await click(b2(/Create and add/));
+  };
+
+  await click(b2(/Build it exercise by exercise/));
+  assert(/Adding to/.test(host2.textContent) && !sectionSelect(), "panel says where exercises go; no Section dropdown outside New exercise");
+  await click(b2(/^New exercise$/));
+  assert(!!sectionSelect(), "Section dropdown is inside the New exercise form");
+  await click(b2(/^From library$/));
+
+  await createInSection("Palm down up and down", "__new__", "Warm up");
+  assert(day2().sections.length === 1 && day2().sections[0].title === "Warm up", "creating with a new section makes it");
+  assert(/Added: Palm down up and down/.test(host2.textContent), "panel stays open (state kept) after the empty day becomes a workout");
+  assert(/Adding to Warm up/.test(host2.textContent.replace(/\s+/g, " ")), "…and now adds to the new section");
+
+  await createInSection("Palm up up and down", "__new__", "warm up");
+  assert(day2().sections.length === 1, "typing the same section name again reuses it (no duplicate)");
+  assert(day2().exercises.every((e) => e.sectionId === day2().sections[0].id), "both exercises are in Warm up");
+
+  await click([...host2.querySelectorAll("button")].find((b) => b.textContent.startsWith("Shrugs")));
+  assert(day2().exercises[2].sectionId === day2().sections[0].id, "a library add goes to the current section");
+
+  // "Added" follows the workout: removing an item drops it from the list.
+  const addedLine = () => [...host2.querySelectorAll("p")].find((p) => p.textContent.startsWith("Added:"))?.textContent;
+  await click([...host2.querySelectorAll("button")].find((b) => b.textContent.startsWith("Shrugs")));
+  assert(addedLine() === "Added: Palm down up and down, Palm up up and down, Shrugs, Shrugs", "adding Shrugs twice lists it twice");
+  const dupId = day2().exercises[3].id;
+  await act(async () => st.saveWorkout({ ...day2(), exercises: day2().exercises.filter((e) => e.id !== dupId) }));
+  assert(addedLine() === "Added: Palm down up and down, Palm up up and down, Shrugs", "removing one from the workout updates the Added list");
+  assert([...host2.querySelectorAll("p")].some((p) => p.textContent.startsWith("Sets/reps are pre-filled")), "the tip is on its own line");
+
+  // Repair: a workout that already has two "Warm up" sections gets merged.
+  const w = day2();
+  st.saveWorkout({
+    ...w,
+    sections: [...w.sections, { id: "dup", title: "Warm Up", notes: ["Slow"] }],
+    exercises: [...w.exercises, { ...w.exercises[0], id: "x", sectionId: "dup" }],
+  });
+  await act(async () => {});
+  assert(day2().sections.length === 1 && day2().exercises.every((e) => e.sectionId === day2().sections[0].id), "existing duplicate sections are merged on open");
+  assert(day2().sections[0].notes?.[0] === "Slow", "…keeping their cues");
+  await act(async () => root2.unmount());
+}
 console.log(failures === 0 ? "\nDAY VIEW OK ✅" : `\n${failures} FAILURES ❌`);
 process.exit(failures ? 1 : 0);
