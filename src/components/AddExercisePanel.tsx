@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   Exercise,
   ExerciseCategory,
@@ -8,12 +8,11 @@ import type {
   WorkoutSection,
 } from "../types";
 import { CATEGORY_LABELS, CATEGORY_ORDER, MEASURE_LABELS } from "../types";
-import { uid } from "../lib/id";
 import { shortDate } from "../lib/dates";
-import { itemFromExercise, lastUseOf, prescriptionSummary } from "../lib/workoutPlan";
+import { itemFromExercise, lastUseOf, nextSectionTitle, prescriptionSummary } from "../lib/workoutPlan";
 
 const MEASURES: MeasureType[] = ["reps", "hold", "reps_in_time", "duration", "check"];
-const NONE = "";
+const BY_CATEGORY = "";
 const NEW_SECTION = "__new__";
 
 const inputCls =
@@ -25,7 +24,8 @@ export default function AddExercisePanel({
   workouts,
   sections,
   items,
-  defaultSectionId,
+  sectionId,
+  onSortByCategory,
   onAdd,
   onCreateExercise,
   onClose,
@@ -36,23 +36,28 @@ export default function AddExercisePanel({
   sections: WorkoutSection[];
   /** This day's current items, so "Added" reflects removals. */
   items: WorkoutExercise[];
-  defaultSectionId?: string;
+  /** Section new exercises go to; undefined = the section for each one's category. */
+  sectionId?: string;
+  /** Go back to adding each exercise to its category's section. */
+  onSortByCategory: () => void;
   /**
-   * Add an item, optionally creating a new section for it. Returns the section
-   * id actually used (an existing section with the same title is reused).
+   * Add an item to its section, or to a new section with this title (an
+   * existing section with the same title is reused).
    */
-  onAdd: (item: WorkoutExercise, newSection?: WorkoutSection) => string | undefined;
+  onAdd: (item: WorkoutExercise, newSectionTitle?: string) => void;
   /** Create a building block in the library. */
   onCreateExercise: (data: { name: string; category: ExerciseCategory; measureType: MeasureType }) => Exercise;
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<"library" | "new">(library.length ? "library" : "new");
-  // Where added exercises go: the section whose "＋ Add" opened the panel
-  // (none for the main "＋ Exercise"). Changeable in the New exercise form.
-  const [sectionId, setSectionId] = useState<string>(defaultSectionId ?? NONE);
   const [query, setQuery] = useState("");
   // Ids of items added from this panel; shown only while still in the workout.
   const [addedIds, setAddedIds] = useState<string[]>([]);
+  // Opened (or retargeted) from a section further down: bring the panel into view.
+  const panelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    panelRef.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+  }, [sectionId]);
 
   // Workouts strictly before this day — "last time" means previous sessions.
   const earlier = useMemo(() => workouts.filter((w) => w.date < date), [workouts, date]);
@@ -61,13 +66,9 @@ export default function AddExercisePanel({
     .map((id) => items.find((i) => i.id === id)?.name)
     .filter((n): n is string => !!n);
 
-  const add = (ex: Exercise, newSectionTitle?: string) => {
-    const newSection = newSectionTitle ? { id: uid(), title: newSectionTitle } : undefined;
-    const intoId = newSection?.id ?? (sectionId || undefined);
-    const item = itemFromExercise(ex, workouts, date, intoId);
-    const used = onAdd(item, newSection);
-    // Later adds go to the same section (the existing one if the title matched).
-    setSectionId(used ?? NONE);
+  const add = (ex: Exercise, into: { id?: string; newTitle?: string }) => {
+    const item = itemFromExercise(ex, workouts, date, into.id);
+    onAdd(item, into.newTitle);
     setAddedIds((a) => [...a, item.id]);
   };
 
@@ -75,7 +76,7 @@ export default function AddExercisePanel({
   const matches = library.filter((e) => !q || e.name.toLowerCase().includes(q));
 
   return (
-    <div className="mb-4 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/60">
+    <div ref={panelRef} className="mb-4 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/60">
       <div className="flex items-center justify-between">
         <p className="text-sm font-semibold">Add exercises</p>
         <button type="button" onClick={onClose} className="text-sm text-sky-600 dark:text-sky-400">
@@ -84,10 +85,21 @@ export default function AddExercisePanel({
       </div>
 
       <p className="text-[11px] text-slate-500">
-        Adding to{" "}
-        <span className="font-semibold text-slate-700 dark:text-slate-200">
-          {targetTitle ?? "the workout (no section)"}
-        </span>
+        {targetTitle ? (
+          <>
+            Adding to{" "}
+            <span className="font-semibold text-slate-700 dark:text-slate-200">{targetTitle}</span> ·{" "}
+            <button type="button" onClick={onSortByCategory} className="text-sky-600 dark:text-sky-400">
+              Sort by category instead
+            </button>
+          </>
+        ) : (
+          <>
+            Each exercise goes to the section for its category (e.g.{" "}
+            <span className="font-semibold text-slate-700 dark:text-slate-200">Warm up</span>). Rename sections or
+            drag exercises between them anytime.
+          </>
+        )}
       </p>
 
       <div className="flex gap-2">
@@ -135,7 +147,7 @@ export default function AddExercisePanel({
                           <li key={e.id}>
                             <button
                               type="button"
-                              onClick={() => add(e)}
+                              onClick={() => add(e, { id: sectionId })}
                               className="flex w-full items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm dark:border-slate-700 dark:bg-slate-900"
                             >
                               <span className="min-w-0">
@@ -163,12 +175,7 @@ export default function AddExercisePanel({
           sections={sections}
           sectionId={sectionId}
           onCreate={(data, section) => {
-            const ex = onCreateExercise(data);
-            if (section.newTitle) add(ex, section.newTitle);
-            else {
-              setSectionId(section.id);
-              add(ex);
-            }
+            add(onCreateExercise(data), section);
             setTab("library");
           }}
         />
@@ -192,14 +199,14 @@ function NewExerciseForm({
   onCreate,
 }: {
   sections: WorkoutSection[];
-  sectionId: string;
+  sectionId?: string;
   onCreate: (
     data: { name: string; category: ExerciseCategory; measureType: MeasureType },
-    section: { id: string; newTitle?: string },
+    section: { id?: string; newTitle?: string },
   ) => void;
 }) {
   const [name, setName] = useState("");
-  const [sectionChoice, setSectionChoice] = useState(sectionId);
+  const [sectionChoice, setSectionChoice] = useState(sectionId ?? BY_CATEGORY);
   const [newSectionTitle, setNewSectionTitle] = useState("");
   const [category, setCategory] = useState<ExerciseCategory>("strength_conditioning");
   const [measureType, setMeasureType] = useState<MeasureType>("reps");
@@ -242,7 +249,7 @@ function NewExerciseForm({
           onChange={(e) => setSectionChoice(e.target.value)}
           className={`mt-0.5 ${inputCls}`}
         >
-          <option value={NONE}>No section</option>
+          <option value={BY_CATEGORY}>By category ({CATEGORY_LABELS[category]})</option>
           {sections.map((s) => (
             <option key={s.id} value={s.id}>
               {s.title}
@@ -255,19 +262,19 @@ function NewExerciseForm({
         <input
           value={newSectionTitle}
           onChange={(e) => setNewSectionTitle(e.target.value)}
-          placeholder="Section name, e.g. Post Climbing"
+          placeholder={`Section name, e.g. Post climbing (default: ${nextSectionTitle(sections)})`}
           className={inputCls}
         />
       )}
       <button
         type="button"
-        disabled={!name.trim() || (sectionChoice === NEW_SECTION && !newSectionTitle.trim())}
+        disabled={!name.trim()}
         onClick={() => {
           onCreate(
             { name: name.trim(), category, measureType },
             sectionChoice === NEW_SECTION
-              ? { id: NONE, newTitle: newSectionTitle.trim() }
-              : { id: sectionChoice },
+              ? { newTitle: newSectionTitle.trim() || nextSectionTitle(sections) }
+              : { id: sectionChoice || undefined },
           );
           setName("");
         }}
@@ -277,8 +284,8 @@ function NewExerciseForm({
       </button>
       <p className="text-[11px] text-slate-400">
         Saved to your library so you can reuse it. Set this workout's sets/reps on the exercise after adding.
-        Sections are just headings within this workout (e.g. Pre Climbing / Post Climbing) — separate from the
-        exercise's category.
+        Sections are headings within this workout (e.g. Warm up / Post Climbing), separate from the exercise's
+        category.
       </p>
     </div>
   );

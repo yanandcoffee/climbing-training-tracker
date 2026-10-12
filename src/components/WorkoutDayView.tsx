@@ -1,5 +1,25 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import {
+  closestCorners,
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  PointerSensor,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragOverEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import type {
   Exercise,
   ExerciseStatus,
@@ -11,13 +31,19 @@ import type {
 } from "../types";
 import { activeWorkouts, useActiveExercises, useActiveWorkouts, useStore } from "../store/useStore";
 import {
+  containerOf,
   findSectionByTitle,
   groupItems,
   mergeDuplicateSections,
   isEmptyWorkout,
   lastUseOf,
+  moveItemTo,
+  nextSectionTitle,
   prescriptionSummary,
+  sectionByCategory,
+  sectionForCategory,
 } from "../lib/workoutPlan";
+import { uid } from "../lib/id";
 import { shortDate } from "../lib/dates";
 import { loggedSets } from "../lib/history";
 import { ExerciseMediaThumb } from "./ExerciseMedia";
@@ -31,6 +57,9 @@ type Dialog = "import" | "copyFrom" | "copyTo" | null;
 const card =
   "rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900";
 
+// Droppable ids for whole sections ("" = exercises not in a section).
+const DROP = "section:";
+
 export default function WorkoutDayView({ date }: { date: string }) {
   const getOrCreate = useStore((s) => s.getOrCreateWorkoutForDate);
   const workout = useStore((s) => activeWorkouts(s).find((w) => w.date === date));
@@ -43,6 +72,15 @@ export default function WorkoutDayView({ date }: { date: string }) {
   const [dialog, setDialog] = useState<Dialog>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  // A section just made with "＋ Section", whose name opens for editing.
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  // While dragging: the previewed order (committed on drop).
+  const [dragItems, setDragItems] = useState<WorkoutExercise[] | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
   // Lazily create the (empty) workout record for this day when it's opened.
   useEffect(() => {
@@ -76,18 +114,15 @@ export default function WorkoutDayView({ date }: { date: string }) {
     }));
   const removeItem = (id: string) =>
     update((w) => ({ ...w, exercises: w.exercises.filter((e) => e.id !== id) }));
-  const moveItem = (id: string, dir: -1 | 1) =>
+  const addSection = () => {
+    const id = uid();
     update((w) => {
-      const list = [...w.exercises];
-      const i = list.findIndex((e) => e.id === id);
-      if (i < 0) return w;
-      // Swap with the nearest neighbour in the same section.
-      let j = i + dir;
-      while (j >= 0 && j < list.length && (list[j].sectionId ?? "") !== (list[i].sectionId ?? "")) j += dir;
-      if (j < 0 || j >= list.length) return w;
-      [list[i], list[j]] = [list[j], list[i]];
-      return { ...w, exercises: list };
+      const existing = w.sections ?? [];
+      return { ...w, sections: [...existing, { id, title: nextSectionTitle(existing) }] };
     });
+    setRenamingId(id);
+    if (adding) setAdding({ sectionId: id });
+  };
   const renameSection = (id: string, title: string) =>
     update((w) => ({
       ...w,
@@ -101,8 +136,9 @@ export default function WorkoutDayView({ date }: { date: string }) {
     }));
 
   const sections = workout.sections ?? [];
-  const sectionIds = new Set(sections.map((s) => s.id));
-  const unsectioned = workout.exercises.filter((e) => !e.sectionId || !sectionIds.has(e.sectionId));
+  const shown = dragItems ?? workout.exercises;
+  const itemsIn = (list: WorkoutExercise[], c: string) => list.filter((e) => containerOf(e, sections) === c);
+  const unsectioned = itemsIn(shown, "");
   const exById = new Map(library.map((e) => [e.id, e]));
   const earlier = workouts.filter((w) => w.date < date);
   const empty = isEmptyWorkout(workout);
@@ -131,23 +167,34 @@ export default function WorkoutDayView({ date }: { date: string }) {
       workouts={workouts}
       sections={sections}
       items={workout.exercises}
-      defaultSectionId={adding.sectionId}
+      sectionId={adding.sectionId}
+      onSortByCategory={() => setAdding({})}
       onCreateExercise={(data) => addExercise(data)}
-      onAdd={(item, newSection) => {
-        let usedId = item.sectionId;
+      onAdd={(item, newTitle) => {
+        let usedId: string | undefined;
         update((w) => {
-          const existing = w.sections ?? [];
-          // Never create a second section with the same name — reuse it.
-          const same = newSection && findSectionByTitle(existing, newSection.title);
-          if (same) usedId = same.id;
-          return {
-            ...w,
-            sections: newSection && !same ? [...existing, newSection] : w.sections,
-            exercises: [...w.exercises, { ...item, sectionId: usedId }],
-          };
+          let sections = w.sections ?? [];
+          let exercises = w.exercises;
+          if (newTitle) {
+            // Never create a second section with the same name — reuse it.
+            usedId = findSectionByTitle(sections, newTitle)?.id;
+            if (!usedId) {
+              usedId = uid();
+              sections = [...sections, { id: usedId, title: newTitle }];
+            }
+          } else if (item.sectionId && sections.some((s) => s.id === item.sectionId)) {
+            usedId = item.sectionId;
+          } else {
+            // By default each exercise goes to the section for its category.
+            // A day that's still one plain list gets organized the same way.
+            if (!sections.length) ({ sections, exercises } = sectionByCategory({ sections, exercises }));
+            ({ sections, id: usedId } = sectionForCategory(sections, item.category));
+          }
+          return { ...w, sections, exercises: [...exercises, { ...item, sectionId: usedId }] };
         });
+        // A section chosen on purpose stays the target; otherwise keep sorting by category.
+        if (newTitle || item.sectionId) setAdding({ sectionId: usedId });
         setOpenId(item.id);
-        return usedId;
       }}
       onClose={() => setAdding(null)}
     />
@@ -192,27 +239,99 @@ export default function WorkoutDayView({ date }: { date: string }) {
     );
   }
 
-  const renderItems = (items: WorkoutExercise[]) =>
-    groupItems(items).map((g, gi) => (
-      <div key={gi} className={g.group ? "mt-1" : ""}>
-        {g.group && <p className="mb-1.5 text-xs font-semibold text-slate-500">{g.group}</p>}
-        <ul className={`space-y-2 ${g.group ? "border-l-2 border-slate-100 pl-2 dark:border-slate-800" : ""}`}>
-          {g.items.map((we) => (
-            <ExerciseRow
-              key={we.id}
-              we={we}
-              lib={we.exerciseId ? exById.get(we.exerciseId) : undefined}
-              last={we.exerciseId ? lastUseOf(earlier, we.exerciseId) : undefined}
-              open={openId === we.id}
-              onToggleOpen={() => setOpenId((id) => (id === we.id ? null : we.id))}
-              onChange={(patch) => updateItem(we.id, patch)}
-              onRemove={() => removeItem(we.id)}
-              onMove={(dir) => moveItem(we.id, dir)}
-            />
-          ))}
-        </ul>
-      </div>
-    ));
+  // One sortable list per section; drag between them to move an exercise across.
+  const renderItems = (c: string) => {
+    const items = itemsIn(shown, c);
+    return (
+      <SortableContext items={items.map((e) => e.id)} strategy={verticalListSortingStrategy}>
+        {items.length ? (
+          <div className="space-y-2">
+            {groupItems(items).map((g, gi) => (
+              <div key={gi} className={g.group ? "mt-1" : ""}>
+                {g.group && <p className="mb-1.5 text-xs font-semibold text-slate-500">{g.group}</p>}
+                <ul className={`space-y-2 ${g.group ? "border-l-2 border-slate-100 pl-2 dark:border-slate-800" : ""}`}>
+                  {g.items.map((we) => (
+                    <ExerciseRow
+                      key={we.id}
+                      we={we}
+                      lib={we.exerciseId ? exById.get(we.exerciseId) : undefined}
+                      last={we.exerciseId ? lastUseOf(earlier, we.exerciseId) : undefined}
+                      open={openId === we.id}
+                      onToggleOpen={() => setOpenId((id) => (id === we.id ? null : we.id))}
+                      onChange={(patch) => updateItem(we.id, patch)}
+                      onRemove={() => removeItem(we.id)}
+                    />
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyDrop id={DROP + c} />
+        )}
+      </SortableContext>
+    );
+  };
+
+  const placeOf = (list: WorkoutExercise[], id: string) => {
+    const item = list.find((e) => e.id === id);
+    return item ? { item, c: containerOf(item, sections) } : null;
+  };
+  const onDragStart = ({ active }: DragStartEvent) => {
+    setDragItems(workout.exercises);
+    setActiveId(String(active.id));
+  };
+  const onDragCancel = () => {
+    setDragItems(null);
+    setActiveId(null);
+  };
+  // Crossing into another section moves the item there in the preview.
+  const onDragOver = ({ active, over }: DragOverEvent) => {
+    if (!over || !dragItems) return;
+    const from = placeOf(dragItems, String(active.id));
+    if (!from) return;
+    const overId = String(over.id);
+    let to: string;
+    let index: number;
+    if (overId.startsWith(DROP)) {
+      to = overId.slice(DROP.length);
+      index = itemsIn(dragItems, to).length;
+    } else {
+      const target = placeOf(dragItems, overId);
+      if (!target) return;
+      to = target.c;
+      const r = active.rect.current.translated;
+      const below = !!r && r.top > over.rect.top + over.rect.height / 2;
+      index = itemsIn(dragItems, to).indexOf(target.item) + (below ? 1 : 0);
+    }
+    if (to === from.c) return;
+    setDragItems(moveItemTo(dragItems, sections, from.item.id, to, index, { regroup: false }));
+  };
+  const onDragEnd = ({ active, over }: DragEndEvent) => {
+    const list = dragItems;
+    onDragCancel();
+    if (!list || !over) return;
+    const from = placeOf(list, String(active.id));
+    if (!from) return;
+    const target = placeOf(list, String(over.id));
+    const inC = itemsIn(list, from.c);
+    const index = target && target.c === from.c ? inC.indexOf(target.item) : inC.length - 1;
+    const final = moveItemTo(list, sections, from.item.id, from.c, index);
+    const same = (a: WorkoutExercise[]) =>
+      a.length === final.length &&
+      a.every((e, i) => e.id === final[i].id && e.sectionId === final[i].sectionId && e.group === final[i].group);
+    if (same(workout.exercises)) return;
+    // Apply the new order to the latest stored items, keeping any edits made meanwhile.
+    update((w) => {
+      const byId = new Map(w.exercises.map((e) => [e.id, e]));
+      const ordered = final.flatMap((f) => {
+        const e = byId.get(f.id);
+        return e ? [{ ...e, sectionId: f.sectionId, group: f.group }] : [];
+      });
+      return { ...w, exercises: [...ordered, ...w.exercises.filter((e) => !final.some((f) => f.id === e.id))] };
+    });
+  };
+  const dragging = activeId ? shown.find((e) => e.id === activeId) : undefined;
 
   return (
     <section className={card}>
@@ -237,6 +356,7 @@ export default function WorkoutDayView({ date }: { date: string }) {
         <ActionBtn primary onClick={() => setAdding(adding ? null : {})}>
           ＋ Exercise
         </ActionBtn>
+        <ActionBtn onClick={addSection}>＋ Section</ActionBtn>
         <ActionBtn onClick={() => setDialog("import")}>📋 Import note</ActionBtn>
         <ActionBtn onClick={() => setDialog("copyFrom")}>⧉ Copy from…</ActionBtn>
         <ActionBtn onClick={() => setDialog("copyTo")}>Copy to…</ActionBtn>
@@ -260,21 +380,52 @@ export default function WorkoutDayView({ date }: { date: string }) {
 
       {addPanel}
 
-      <div className="space-y-5">
-        {unsectioned.length > 0 && <div>{renderItems(unsectioned)}</div>}
-        {sections.map((s) => (
-          <SectionBlock
-            key={s.id}
-            section={s}
-            hasItems={workout.exercises.some((e) => e.sectionId === s.id)}
-            onRename={(t) => renameSection(s.id, t)}
-            onDelete={() => deleteSection(s.id)}
-            onAdd={() => setAdding({ sectionId: s.id })}
-          >
-            {renderItems(workout.exercises.filter((e) => e.sectionId === s.id))}
-          </SectionBlock>
-        ))}
-      </div>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCorners}
+        onDragStart={onDragStart}
+        onDragOver={onDragOver}
+        onDragEnd={onDragEnd}
+        onDragCancel={onDragCancel}
+      >
+        <div className="space-y-5">
+          {unsectioned.length > 0 && (
+            <div>
+              {sections.length > 0 && (
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Not in a section</p>
+              )}
+              {renderItems("")}
+            </div>
+          )}
+          {sections.map((s) => (
+            <SectionBlock
+              key={s.id}
+              section={s}
+              hasItems={itemsIn(shown, s.id).length > 0}
+              startEditing={renamingId === s.id}
+              onRename={(t) => renameSection(s.id, t)}
+              onDoneEditing={() => setRenamingId(null)}
+              onDelete={() => deleteSection(s.id)}
+              onAdd={() => setAdding({ sectionId: s.id })}
+            >
+              {renderItems(s.id)}
+            </SectionBlock>
+          ))}
+        </div>
+        <DragOverlay>
+          {dragging && (
+            <div className="flex items-center gap-2 rounded-xl border border-sky-400 bg-white p-3 shadow-lg dark:bg-slate-900">
+              <GripIcon />
+              <div className="min-w-0">
+                <p className="truncate font-medium">{dragging.name}</p>
+                <p className="text-xs text-slate-500">
+                  {prescriptionSummary(dragging.measureType, dragging.prescription)}
+                </p>
+              </div>
+            </div>
+          )}
+        </DragOverlay>
+      </DndContext>
       {dialogs}
     </section>
   );
@@ -308,22 +459,49 @@ function ActionBtn({
   );
 }
 
+/** Drop target for a section with no exercises. */
+function EmptyDrop({ id }: { id: string }) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`rounded-xl border border-dashed px-3 py-4 text-center text-xs ${
+        isOver ? "border-sky-400 bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300" : "border-slate-300 text-slate-400 dark:border-slate-700"
+      }`}
+    >
+      Empty — drag exercises here, or ＋ Add
+    </div>
+  );
+}
+
+function GripIcon() {
+  return (
+    <svg viewBox="0 0 10 16" width="10" height="16" aria-hidden="true" className="fill-current">
+      {[2, 8, 14].flatMap((y) => [2, 8].map((x) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1.5" />))}
+    </svg>
+  );
+}
+
 function SectionBlock({
   section,
   hasItems,
+  startEditing,
   onRename,
+  onDoneEditing,
   onDelete,
   onAdd,
   children,
 }: {
   section: WorkoutSection;
   hasItems: boolean;
+  startEditing?: boolean;
   onRename: (title: string) => void;
+  onDoneEditing: () => void;
   onDelete: () => void;
   onAdd: () => void;
   children: React.ReactNode;
 }) {
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(!!startEditing);
   return (
     <div>
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -335,6 +513,7 @@ function SectionBlock({
               const v = e.target.value.trim();
               if (v && v !== section.title) onRename(v);
               setEditing(false);
+              onDoneEditing();
             }}
             onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
             className="flex-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm font-semibold dark:border-slate-700 dark:bg-slate-900"
@@ -346,7 +525,7 @@ function SectionBlock({
             className="text-left text-xs font-semibold uppercase tracking-wide text-slate-400"
             title="Rename section"
           >
-            {section.title}
+            {section.title} <span className="font-normal normal-case">✎</span>
           </button>
         )}
         <span className="flex shrink-0 gap-2 text-xs">
@@ -389,7 +568,6 @@ function ExerciseRow({
   onToggleOpen,
   onChange,
   onRemove,
-  onMove,
 }: {
   we: WorkoutExercise;
   lib?: Exercise;
@@ -398,14 +576,31 @@ function ExerciseRow({
   onToggleOpen: () => void;
   onChange: (patch: Partial<WorkoutExercise>) => void;
   onRemove: () => void;
-  onMove: (dir: -1 | 1) => void;
 }) {
   const navigate = useNavigate();
   const summary = prescriptionSummary(we.measureType, we.prescription);
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
+    useSortable({ id: we.id });
 
   return (
-    <li className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
-      <div className="flex items-start gap-3">
+    <li
+      ref={setNodeRef}
+      style={{ transform: CSS.Translate.toString(transform), transition }}
+      className={`rounded-xl border border-slate-200 bg-white py-3 pr-3 pl-1 dark:border-slate-700 dark:bg-slate-900 ${
+        isDragging ? "opacity-40" : ""
+      }`}
+    >
+      <div className="flex items-start gap-2">
+        <button
+          type="button"
+          ref={setActivatorNodeRef}
+          {...attributes}
+          {...listeners}
+          aria-label={`Drag to reorder ${we.name}`}
+          className="-my-1 flex min-h-11 w-7 shrink-0 cursor-grab touch-none items-center justify-center self-stretch text-slate-300 active:cursor-grabbing dark:text-slate-600"
+        >
+          <GripIcon />
+        </button>
         {lib?.mediaUrl && (
           <ExerciseMediaThumb ex={lib} onClick={() => navigate(`/exercise/${lib.id}`)} />
         )}
@@ -472,15 +667,7 @@ function ExerciseRow({
                 </p>
                 <MetricsEntry we={we} onMetrics={(m) => onChange({ metrics: { ...we.metrics, ...m } })} />
               </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="flex gap-1">
-                  <button type="button" onClick={() => onMove(-1)} className="rounded bg-white px-2 py-1 dark:bg-slate-900" aria-label="Move up">
-                    ↑
-                  </button>
-                  <button type="button" onClick={() => onMove(1)} className="rounded bg-white px-2 py-1 dark:bg-slate-900" aria-label="Move down">
-                    ↓
-                  </button>
-                </span>
+              <div className="flex items-center justify-end text-xs">
                 <button type="button" onClick={onRemove} className="text-red-600 dark:text-red-400">
                   Remove from workout
                 </button>

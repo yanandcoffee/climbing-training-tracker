@@ -121,7 +121,7 @@ console.log("Logging sets:");
 
 console.log("Adding an exercise:");
 await click(btn(/＋ Exercise/));
-assert(/Adding to the workout \(no section\)/.test(host.textContent), "the main ＋ Exercise adds outside any section");
+assert(/goes to the section for its category/.test(host.textContent), "the main ＋ Exercise sorts by category");
 await click(btn(/^Done$/));
 await click(btn(/^＋ Add$/)); // the section's own add button
 assert(/Adding to Post Climbing exercise/.test(host.textContent.replace(/\s+/g, " ")), "a section's ＋ Add targets that section");
@@ -167,9 +167,10 @@ console.log("Building an empty day with a new section:");
   };
 
   await click(b2(/Build it exercise by exercise/));
-  assert(/Adding to/.test(host2.textContent) && !sectionSelect(), "panel says where exercises go; no Section dropdown outside New exercise");
+  assert(/section for its category/.test(host2.textContent) && !sectionSelect(), "panel says where exercises go; no Section dropdown outside New exercise");
   await click(b2(/^New exercise$/));
   assert(!!sectionSelect(), "Section dropdown is inside the New exercise form");
+  assert(sectionSelect().options[0].textContent.startsWith("By category"), "…defaulting to the exercise's category");
   await click(b2(/^From library$/));
 
   await createInSection("Palm down up and down", "__new__", "Warm up");
@@ -182,7 +183,7 @@ console.log("Building an empty day with a new section:");
   assert(day2().exercises.every((e) => e.sectionId === day2().sections[0].id), "both exercises are in Warm up");
 
   await click([...host2.querySelectorAll("button")].find((b) => b.textContent.startsWith("Shrugs")));
-  assert(day2().exercises[2].sectionId === day2().sections[0].id, "a library add goes to the current section");
+  assert(day2().exercises[2].sectionId === day2().sections[0].id, "after picking a section on purpose, library adds go there too");
 
   // "Added" follows the workout: removing an item drops it from the list.
   const addedLine = () => [...host2.querySelectorAll("p")].find((p) => p.textContent.startsWith("Added:"))?.textContent;
@@ -204,6 +205,72 @@ console.log("Building an empty day with a new section:");
   assert(day2().sections.length === 1 && day2().exercises.every((e) => e.sectionId === day2().sections[0].id), "existing duplicate sections are merged on open");
   assert(day2().sections[0].notes?.[0] === "Slow", "…keeping their cues");
   await act(async () => root2.unmount());
+}
+
+console.log("Exercises go to their category's section:");
+{
+  const DAY3 = "2026-10-16";
+  const host3 = document.createElement("div");
+  document.body.appendChild(host3);
+  const root3 = createRoot(host3);
+  await act(async () =>
+    root3.render(React.createElement(MemoryRouter, null, React.createElement(WorkoutDayView, { date: DAY3 }))),
+  );
+  const b3 = (re) => [...host3.querySelectorAll("button")].find((b) => re.test(b.textContent));
+  const day3 = () => activeWorkouts(useStore.getState()).find((w) => w.date === DAY3);
+  const text3 = () => host3.textContent.replace(/\s+/g, " ");
+
+  const warmup = st.addExercise({ name: "Wrist circles", category: "warm_up", measureType: "check" });
+  await click(b3(/Build it exercise by exercise/));
+  await click(b3(/^Shrugs/));
+  const S_AND_C = "Off-the-wall strength & conditioning";
+  assert(day3().sections.length === 1 && day3().sections[0].title === S_AND_C, "the first add makes a section named after its category");
+  await click(b3(/^Pull ups/));
+  assert(day3().sections.length === 1 && day3().exercises.every((e) => e.sectionId === day3().sections[0].id), "same category → same section");
+  await click(b3(/^Wrist circles/));
+  assert(day3().sections.map((s) => s.title).join("|") === `Warm up|${S_AND_C}`, "a warm-up exercise gets a Warm up section, placed first");
+  assert(day3().exercises.find((e) => e.exerciseId === warmup.id).sectionId === day3().sections[0].id, "…and goes into it");
+  await click(b3(/^Done$/));
+
+  // A section's own ＋ Add puts any exercise there; "Sort by category instead" undoes that.
+  await click([...host3.querySelectorAll("button")].filter((b) => /^＋ Add$/.test(b.textContent))[0]);
+  assert(/Adding to Warm up/.test(text3()), "a section's ＋ Add targets that section");
+  await click(b3(/^Pull ups/));
+  assert(day3().exercises.at(-1).sectionId === day3().sections[0].id, "…even for another category");
+  await click(b3(/Sort by category instead/));
+  assert(/section for its category/.test(text3()), "Sort by category instead goes back to the default");
+  await act(async () => st.saveWorkout({ ...day3(), exercises: day3().exercises.slice(0, -1) }));
+  await click(b3(/^Done$/));
+
+  await click(b3(/＋ Section/));
+  assert(day3().sections.length === 3 && day3().sections[2].title === "Section 3", "＋ Section adds a numbered section");
+  const nameInput = [...host3.querySelectorAll("input")].find((i) => i.defaultValue === "Section 3");
+  assert(!!nameInput, "…with its name open for editing");
+  await blurWith(nameInput, "Post climbing");
+  assert(day3().sections[2].title === "Post climbing", "renaming it saves the title");
+  assert(/Empty — drag exercises here/.test(text3()), "an empty section invites drops");
+  assert(host3.querySelectorAll('button[aria-label^="Drag to reorder"]').length === 3, "each exercise has a drag handle");
+  assert(!host3.querySelector('button[aria-label="Move up"]'), "the ↑/↓ buttons are gone");
+  await act(async () => root3.unmount());
+
+  // A day that's still a plain list gets organized by category on the next add.
+  const DAY4 = "2026-10-18";
+  st.applyWorkoutToDates(
+    { sections: [], exercises: [{ id: "f1", exerciseId: shrugs.id, name: "Shrugs", category: "strength_conditioning", measureType: "reps", status: "none" }] },
+    [DAY4],
+    "replace",
+  );
+  const host4 = document.createElement("div");
+  document.body.appendChild(host4);
+  const root4 = createRoot(host4);
+  await act(async () =>
+    root4.render(React.createElement(MemoryRouter, null, React.createElement(WorkoutDayView, { date: DAY4 }))),
+  );
+  const day4 = () => activeWorkouts(useStore.getState()).find((w) => w.date === DAY4);
+  await click([...host4.querySelectorAll("button")].find((b) => /＋ Exercise/.test(b.textContent)));
+  await click([...host4.querySelectorAll("button")].find((b) => b.textContent.startsWith("Pull ups")));
+  assert(day4().sections.length === 1 && day4().exercises.length === 2 && day4().exercises.every((e) => e.sectionId === day4().sections[0].id), "a plain list is organized by category on the next add");
+  await act(async () => root4.unmount());
 }
 console.log(failures === 0 ? "\nDAY VIEW OK ✅" : `\n${failures} FAILURES ❌`);
 process.exit(failures ? 1 : 0);

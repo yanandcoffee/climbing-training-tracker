@@ -11,6 +11,9 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@supabase/supabase-js": "^2.117.3",
     "date-fns": "^4.4.0",
     "openai": "^7.32.0",

@@ -8,6 +8,10 @@ import {
   itemFromExercise,
   lastUseOf,
   mergeBody,
+  moveItemTo,
+  nextSectionTitle,
+  sectionByCategory,
+  sectionForCategory,
   prescriptionSummary,
   type WorkoutBody,
 } from "../src/lib/workoutPlan";
@@ -236,6 +240,54 @@ console.log("Per-set logging:");
 
   assert(point(undefined).sets.length === 0 && opt("reps").value(point(undefined).effective) === 10, "no log + Done still counts the target");
   assert(!hasLogged({ sets: [{}] }) && hasLogged({ sets: [{ reps: 1 }] }) && hasLogged({ rpe: 7 }) && hasLogged({ reps: 3 }), "hasLogged ignores blank rows");
+}
+
+console.log("Sections and drag-and-drop moves:");
+{
+  const it = (id: string, sectionId?: string, group?: string) =>
+    ({ id, sectionId, group, name: id, category: "core", measureType: "reps", status: "none" }) as const;
+  const sections = [{ id: "s1", title: "Warm up" }, { id: "s2", title: "Section 2" }];
+  const items = [it("a", "s1", "G"), it("b", "s1", "G"), it("c", "s1"), it("d", "s2")];
+  const order = (l: { id: string }[]) => l.map((e) => e.id).join("");
+
+  assert(nextSectionTitle([]) === "Section 1" && nextSectionTitle(sections) === "Section 3", "new sections are numbered");
+  assert(nextSectionTitle([{ id: "x", title: "Section 2" }]) === "Section 3", "…skipping titles already used");
+
+  const warm = sectionForCategory(sections, "warm_up");
+  assert(warm.id === "s1" && warm.sections === sections, "a category's section is found by title (Warm up)");
+  const core = sectionForCategory([], "core");
+  assert(core.sections.length === 1 && core.sections[0].title === "Core training", "…or created, named after the category");
+  const placed = sectionForCategory(
+    [{ id: "w", title: "Warm up" }, { id: "m", title: "Mobility work" }, { id: "x", title: "Finger stuff" }],
+    "on_wall_drills",
+  ).sections.map((s) => s.title);
+  assert(placed.join("|") === "Warm up|On-wall climbing drills|Mobility work|Finger stuff", "new category sections sit in category order");
+  const flat = sectionByCategory({
+    sections: [],
+    exercises: [
+      { ...it("p"), category: "warm_up" },
+      { ...it("q"), category: "strength_conditioning" },
+      { ...it("r"), category: "warm_up" },
+    ],
+  });
+  assert(
+    flat.sections.map((s) => s.title).join("|") === "Warm up|Off-the-wall strength & conditioning" &&
+      flat.exercises[0].sectionId === flat.exercises[2].sectionId,
+    "a plain list is organized into category sections",
+  );
+
+  const up = moveItemTo(items, sections, "c", "s1", 0);
+  assert(order(up) === "cabd" && up[0].group === undefined, "moving to the top of a section, outside the group, keeps it ungrouped");
+  const into = moveItemTo(items, sections, "c", "s1", 1);
+  assert(order(into) === "acbd" && into[1].group === "G", "dropping inside a group's run joins that group");
+  const across = moveItemTo(items, sections, "a", "s2", 1);
+  assert(order(across) === "bcda" && across[3].sectionId === "s2" && across[3].group === "G", "dragging to another section moves it there");
+  const toEmpty = moveItemTo(items, [...sections, { id: "s3", title: "Cool down" }], "d", "s3", 0);
+  assert(toEmpty.find((e) => e.id === "d")?.sectionId === "s3", "an empty section accepts a drop");
+  const out = moveItemTo(items, sections, "d", "", 0);
+  assert(out.find((e) => e.id === "d")?.sectionId === undefined, "the no-section list accepts a drop");
+  const preview = moveItemTo(items, sections, "c", "s1", 1, { regroup: false });
+  assert(preview[1].group === undefined, "drag previews don't regroup until the drop");
 }
 
 console.log(failures === 0 ? "\nWORKOUTS OK ✅" : `\n${failures} FAILURES ❌`);

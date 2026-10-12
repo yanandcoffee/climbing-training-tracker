@@ -1,11 +1,13 @@
 import type {
   Exercise,
+  ExerciseCategory,
   MeasureType,
   Prescription,
   Workout,
   WorkoutExercise,
   WorkoutSection,
 } from "../types";
+import { CATEGORY_LABELS, CATEGORY_ORDER } from "../types";
 import { uid } from "./id";
 
 /** The content of a workout, independent of its date: what gets imported or copied. */
@@ -205,4 +207,86 @@ export function groupItems(items: WorkoutExercise[]): ItemGroup[] {
     else out.push({ group: it.group, items: [it] });
   }
   return out;
+}
+
+/** A section title not used yet in this workout: "Section 1", "Section 2", … */
+export function nextSectionTitle(sections: WorkoutSection[]): string {
+  let n = sections.length + 1;
+  while (findSectionByTitle(sections, `Section ${n}`)) n++;
+  return `Section ${n}`;
+}
+
+const categoryRank = (title: string) =>
+  CATEGORY_ORDER.findIndex((c) => norm(CATEGORY_LABELS[c]) === norm(title));
+
+/**
+ * The section named after a category (e.g. "Warm up"), where exercises go by
+ * default. Creates it if missing, placed in category order among the other
+ * category-named sections.
+ */
+export function sectionForCategory(
+  sections: WorkoutSection[],
+  category: ExerciseCategory,
+): { sections: WorkoutSection[]; id: string } {
+  const title = CATEGORY_LABELS[category];
+  const found = findSectionByTitle(sections, title);
+  if (found) return { sections, id: found.id };
+  const created = { id: uid(), title };
+  const rank = CATEGORY_ORDER.indexOf(category);
+  const at = sections.findIndex((s) => categoryRank(s.title) > rank);
+  const next = at < 0 ? [...sections, created] : [...sections.slice(0, at), created, ...sections.slice(at)];
+  return { sections: next, id: created.id };
+}
+
+/**
+ * Put exercises that aren't in a section into the section for their category.
+ * Returns the body unchanged when every exercise already has a section.
+ */
+export function sectionByCategory<T extends WorkoutBody>(body: T): T {
+  let sections = body.sections;
+  const valid = new Set(sections.map((s) => s.id));
+  if (body.exercises.every((e) => e.sectionId && valid.has(e.sectionId))) return body;
+  const exercises = body.exercises.map((e) => {
+    if (e.sectionId && valid.has(e.sectionId)) return e;
+    const r = sectionForCategory(sections, e.category);
+    sections = r.sections;
+    return { ...e, sectionId: r.id };
+  });
+  return { ...body, sections, exercises };
+}
+
+/** The section an item is shown in ("" for none, including a missing section). */
+export function containerOf(item: WorkoutExercise, sections: WorkoutSection[]): string {
+  return item.sectionId && sections.some((s) => s.id === item.sectionId) ? item.sectionId : "";
+}
+
+/**
+ * Move an item to position `index` among `container`'s items ("" = no section),
+ * e.g. after a drag and drop. Dropped inside a run of one sub-heading group, it
+ * joins that group; otherwise it keeps its own.
+ */
+export function moveItemTo(
+  items: WorkoutExercise[],
+  sections: WorkoutSection[],
+  id: string,
+  container: string,
+  index: number,
+  { regroup = true }: { regroup?: boolean } = {},
+): WorkoutExercise[] {
+  const item = items.find((e) => e.id === id);
+  if (!item) return items;
+  const rest = items.filter((e) => e.id !== id);
+  const inTarget = rest.filter((e) => containerOf(e, sections) === container);
+  const i = Math.max(0, Math.min(index, inTarget.length));
+  const above = inTarget[i - 1];
+  const below = inTarget[i];
+  const group =
+    regroup && above && below && (above.group ?? "") === (below.group ?? "") ? above.group : item.group;
+  const moved: WorkoutExercise = { ...item, sectionId: container || undefined, group };
+  const at = below
+    ? rest.indexOf(below)
+    : above
+      ? rest.indexOf(above) + 1
+      : rest.length;
+  return [...rest.slice(0, at), moved, ...rest.slice(at)];
 }
