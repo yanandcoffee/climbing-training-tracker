@@ -12,7 +12,7 @@ export default defineConfig({
       includeAssets: ["favicon.svg", "icon-192.png", "icon-512.png"],
       manifest: {
         name: "Break Your Plateau",
-        short_name: "Plateau",
+        short_name: "Break Your Plateau",
         description:
           "Personal bouldering training tracker: readiness check-ins, planned workouts, and progress trends.",
         theme_color: "#0f172a",
