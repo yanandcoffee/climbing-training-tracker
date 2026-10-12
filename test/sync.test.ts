@@ -210,6 +210,30 @@ console.log("Deletes:");
   assert(b.snap.exercises[0].deletedAt === 500, "soft-delete propagates to the other device");
 }
 
+// ---- wiped device: storage lost, sync checkpoint kept ---------------------------------
+console.log("Recovering a wiped device:");
+{
+  const server = new FakeServer();
+  const a = new Device(server);
+  a.snap.exercises.push(exercise("x1", "Pull-ups", 100), exercise("x2", "Shrugs", 100));
+  a.snap.workouts.push(workout("2026-03-01", 100, 3));
+  await a.sync();
+  await a.sync();
+  assert(!!a.state.lastPull, "device has an incremental-pull checkpoint");
+
+  // Storage wiped (an empty store got saved), then a day view auto-creates a workout.
+  a.snap = emptySnapshot();
+  a.snap.workouts.push(workout("2026-03-01", 0));
+  const r = await a.sync();
+  assert(r.pushed === 0, "the empty device pushes nothing over the account's data");
+  assert(a.snap.exercises.length === 2, "the next sync pulls everything back");
+  assert(a.snap.workouts.length === 1 && a.snap.workouts[0].exercises.length === 3, "…and the real workout beats the auto-created empty one");
+  const r2 = await a.sync();
+  assert(r2.pulled === 1 || r2.pulled === 0, "after recovering it goes back to incremental pulls");
+  const total = [...server.rows.values()].length;
+  assert(total === 3, "the server still has exactly the original records");
+}
+
 // ---- 6. scope: settings are never synced ----------------------------------------------------
 console.log("Scope:");
 {

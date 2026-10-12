@@ -97,9 +97,12 @@ function snapshotOf(s: State): Snapshot {
 
 export const useStore = create<State>((set, get) => {
   // Persist after any mutation. `partial` is the state slice to merge.
+  // Never before hydrate() has loaded: the store starts empty, and saving it
+  // then would overwrite everything stored on this device (this happened when
+  // a dev hot-reload re-created the store and a day view auto-created a workout).
   const persist = (partial: Partial<State>) => {
     set(partial);
-    void adapter.save(snapshotOf(get()));
+    if (get().loaded) void adapter.save(snapshotOf(get()));
   };
 
   return {

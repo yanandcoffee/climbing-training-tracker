@@ -65,6 +65,20 @@ for (const c of ["green", "orange", "red", "black"] as const) {
 }
 assert(nearestPointOption("black", -37) === -40, "stale value snaps to nearest slot");
 
+// --- Loading guard ---------------------------------------------------------
+// The store starts empty until hydrate() loads; saving before then would wipe
+// this device's stored data (it happened via a dev hot-reload).
+console.log("Loading guard:");
+localStorage.setItem(
+  "ctt.snapshot.v1",
+  JSON.stringify({ version: 1, checkIns: [], exercises: [{ id: "kept", name: "Kept", category: "core", measureType: "reps", updatedAt: 5 }], workouts: [], templates: [], schedule: [], settings: {} }),
+);
+useStore.getState().getOrCreateWorkoutForDate("2026-01-01");
+assert(localStorage.getItem("ctt.snapshot.v1")!.includes('"kept"'), "an edit before loading doesn't overwrite stored data");
+await useStore.getState().hydrate();
+assert(useStore.getState().exercises.some((e) => e.id === "kept"), "…which then loads intact");
+useStore.getState().clearAll();
+
 // --- Store flow ------------------------------------------------------------
 console.log("Store flow:");
 const s = useStore.getState();

@@ -100,6 +100,12 @@ export const emptySyncState = (userId: string | null = null): SyncState => ({
   known: {},
 });
 
+/** Whether records known to be on the server are absent from this device entirely. */
+export function missingLocally(state: SyncState, snapshot: Snapshot): boolean {
+  const local = new Set(snapshotToRows(snapshot).map((r) => keyOf(r.kind, r.id)));
+  return Object.keys(state.known).some((k) => !local.has(k));
+}
+
 export interface RemoteBackend {
   pull(since: string | null): Promise<Row[]>;
   push(rows: Row[]): Promise<void>;
@@ -122,6 +128,9 @@ export async function syncCycle(opts: {
 }): Promise<{ state: SyncState; pulled: number; pushed: number }> {
   const known = { ...opts.state.known };
   let lastPull = opts.state.lastPull;
+  // This device lost records the server has (e.g. its storage was wiped): an
+  // incremental pull would never bring them back, so pull everything again.
+  if (lastPull && missingLocally(opts.state, opts.getSnapshot())) lastPull = null;
 
   const pulled = await opts.backend.pull(lastPull);
   for (const r of pulled) {
