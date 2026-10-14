@@ -7,6 +7,9 @@ import {
   groupItems,
   itemFromExercise,
   lastUseOf,
+  defaultMergeMode,
+  hasProgress,
+  matchExisting,
   mergeBody,
   moveItemTo,
   nextSectionTitle,
@@ -180,6 +183,49 @@ console.log("Copy / append:");
   assert(merged.exercises[0].status === "complete", "append keeps existing progress");
   assert(post[0].notes?.[0] === "Go easy", "existing section cues kept");
   assert(mergeBody(existing, body, "replace").exercises.length === 12, "replace discards the existing content");
+}
+
+console.log("Adding a note to a day that already has exercises:");
+{
+  const ex = (id: string, name: string, extra: Partial<WorkoutBody["exercises"][number]> = {}) =>
+    ({ id, name, category: "strength_conditioning", measureType: "reps", status: "none", ...extra }) as WorkoutBody["exercises"][number];
+  const mine: WorkoutBody = {
+    sections: [{ id: "s", title: "Off-the-wall strength & conditioning" }],
+    exercises: [
+      ex("m1", "Shrugs", { exerciseId: "lib-shrugs", sectionId: "s", status: "complete", prescription: { sets: 2, reps: 8 } }),
+      ex("m2", "Pull ups", { exerciseId: "lib-pull", sectionId: "s" }),
+      ex("m3", "Dead hang", { sectionId: "s", measureType: "hold" }),
+    ],
+  };
+  const note: WorkoutBody = {
+    sections: [
+      { id: "c1", title: "Post Climbing" },
+      { id: "c2", title: "Pre Climbing", notes: ["Warm up well"] },
+    ],
+    exercises: [
+      ex("n1", "Shrugs", { exerciseId: "lib-shrugs", sectionId: "c1", prescription: { sets: 3, reps: 10 } }),
+      ex("n2", "pull ups", { exerciseId: "lib-pull", sectionId: "c1", prescription: { sets: 3, reps: 5 }, notes: "Slow" }),
+      ex("n3", "Rows", { exerciseId: "lib-rows", sectionId: "c1" }),
+      ex("n4", "Dead Hang", { sectionId: "c2", measureType: "hold", prescription: { holdSec: 10 } }),
+      ex("n5", "Shrugs", { exerciseId: "lib-shrugs", sectionId: "c1" }),
+    ],
+  };
+  const m = mergeBody(mine, note, "append");
+  const names = m.exercises.map((e) => e.name);
+  assert(names.join(",") === "Shrugs,Pull ups,Dead hang,Rows,Shrugs", "exercises already on the day aren't added again (by library link, else name)");
+  assert(matchExisting(mine.exercises, note.exercises).size === 3, "matchExisting finds the same three");
+  assert(m.exercises[0].status === "complete" && m.exercises[0].prescription?.reps === 8, "a kept exercise keeps its progress and target");
+  assert(m.exercises[1].prescription?.reps === 5 && m.exercises[1].notes === "Slow", "…one with no target yet takes the note's target and notes");
+  assert(m.exercises[2].prescription?.holdSec === 10, "…matched by name when there's no library link");
+  assert(m.sections.map((s) => s.title).join("|") === "Off-the-wall strength & conditioning|Post Climbing|Pre Climbing", "sections with new exercises or cues are added");
+  const onlyDupes = mergeBody(mine, { sections: [{ id: "c1", title: "Post Climbing" }], exercises: [note.exercises[0]] }, "append");
+  assert(onlyDupes.sections.length === 1 && onlyDupes.exercises.length === 3, "a note section whose exercises are all already here isn't added empty");
+
+  assert(hasProgress(mine.exercises[0]) && !hasProgress(mine.exercises[1]), "marked Done counts as progress");
+  assert(hasProgress(ex("x", "X", { metrics: { sets: [{ reps: 5 }] } })) && !hasProgress(ex("y", "Y", { metrics: { sets: [{}] } })), "logged sets count; blank rows don't");
+  const day = (exercises: WorkoutBody["exercises"]) => ({ id: "w", date: "2026-10-14", updatedAt: 1, exercises }) as Workout;
+  assert(defaultMergeMode([day(mine.exercises)]) === "append", "a day with progress defaults to Add to it");
+  assert(defaultMergeMode([day(mine.exercises.slice(1))]) === "replace", "a day with nothing done defaults to Replace");
 }
 
 console.log("Progression (Shrugs 1×5 → 1×7):");

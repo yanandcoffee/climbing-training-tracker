@@ -4,10 +4,11 @@ import { CATEGORY_LABELS } from "../types";
 import { useActiveExercises, useActiveWorkouts, useStore } from "../store/useStore";
 import { parseNotes, type ParsedItem, type ParsedPlan } from "../lib/parseNotes";
 import { PROVIDER_ORDER, PROVIDERS, apiKeyFor, providerOf } from "../lib/providers";
-import { isEmptyWorkout, prescriptionSummary } from "../lib/workoutPlan";
+import { defaultMergeMode, isEmptyWorkout, prescriptionSummary, type MergeMode } from "../lib/workoutPlan";
 import { defaultMapping, itemKey, NEW_EXERCISE as NEW, planToBody } from "../lib/importPlan";
 import { shortDate } from "../lib/dates";
 import MultiDatePicker from "./MultiDatePicker";
+import ExistingWorkoutChoice from "./ExistingWorkoutChoice";
 
 export default function ImportNotesDialog({
   initialDate,
@@ -34,13 +35,28 @@ export default function ImportNotesDialog({
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [removed, setRemoved] = useState<Set<string>>(new Set());
   const [dates, setDates] = useState<string[]>([initialDate]);
-  const [mode, setMode] = useState<"replace" | "append">("replace");
+  const [picked, setPicked] = useState<MergeMode | null>(null);
 
   const workoutDates = useMemo(
     () => new Set(workouts.filter((w) => !isEmptyWorkout(w)).map((w) => w.date)),
     [workouts],
   );
   const conflicts = dates.filter((d) => workoutDates.has(d));
+  const mode = picked ?? defaultMergeMode(workouts.filter((w) => conflicts.includes(w.date)));
+  // What the note would add, as library links/names, to show which are already on the day.
+  const incoming = useMemo(() => {
+    if (!plan) return [];
+    const libById = new Map(library.map((e) => [e.id, e]));
+    return plan.sections.flatMap((sec, si) =>
+      sec.items.flatMap((it, ii) => {
+        const key = itemKey(si, ii);
+        if (removed.has(key)) return [];
+        const ex = mapping[key] && mapping[key] !== NEW ? libById.get(mapping[key]) : undefined;
+        // A "new" item gets a fresh library id on save, so it can't match a linked one.
+        return [{ exerciseId: ex?.id ?? `new:${key}`, name: ex?.name ?? it.name }];
+      }),
+    );
+  }, [plan, mapping, removed, library]);
 
   const run = async () => {
     setError(null);
@@ -185,29 +201,13 @@ export default function ImportNotesDialog({
               </p>
               <MultiDatePicker selected={dates} onChange={setDates} markedDates={workoutDates} />
               {conflicts.length > 0 && (
-                <div className="mt-3 rounded-lg bg-slate-50 p-2 text-sm dark:bg-slate-800">
-                  <p className="mb-1.5">
-                    {conflicts.map(shortDate).join(", ")}{" "}
-                    {conflicts.length === 1 ? "already has" : "already have"} a workout:
-                  </p>
-                  <div className="flex gap-2" role="radiogroup" aria-label="Existing workout">
-                    {(["replace", "append"] as const).map((m) => (
-                      <button
-                        key={m}
-                        type="button"
-                        role="radio"
-                        aria-checked={mode === m}
-                        onClick={() => setMode(m)}
-                        className={`flex-1 rounded-lg px-2 py-1.5 text-sm font-medium ${
-                          mode === m
-                            ? "bg-sky-600 text-white"
-                            : "bg-white text-slate-700 dark:bg-slate-900 dark:text-slate-200"
-                        }`}
-                      >
-                        {m === "replace" ? "Replace it" : "Add to it"}
-                      </button>
-                    ))}
-                  </div>
+                <div className="mt-3">
+                  <ExistingWorkoutChoice
+                    existing={workouts.filter((w) => conflicts.includes(w.date))}
+                    incoming={incoming}
+                    mode={mode}
+                    onMode={setPicked}
+                  />
                 </div>
               )}
             </div>

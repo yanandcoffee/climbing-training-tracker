@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
 import type { Workout } from "../types";
 import { useActiveWorkouts, useStore } from "../store/useStore";
-import { isEmptyWorkout, type WorkoutBody } from "../lib/workoutPlan";
+import { defaultMergeMode, isEmptyWorkout, type MergeMode, type WorkoutBody } from "../lib/workoutPlan";
 import { prettyDate, shortDate } from "../lib/dates";
 import MultiDatePicker from "./MultiDatePicker";
+import ExistingWorkoutChoice from "./ExistingWorkoutChoice";
 
 const bodyOf = (w: Workout): WorkoutBody => ({
   name: w.name,
@@ -39,7 +40,7 @@ export default function CopyWorkoutDialog({
   const current = filled.find((w) => w.date === date);
 
   const [targets, setTargets] = useState<string[]>([]);
-  const [mode, setMode] = useState<"replace" | "append">("replace");
+  const [picked, setPicked] = useState<MergeMode | null>(null);
 
   const conflicts =
     direction === "from"
@@ -49,32 +50,15 @@ export default function CopyWorkoutDialog({
       : targets.filter((d) => filledDates.has(d) && d !== date);
 
   const sources = filled.filter((w) => w.date !== date);
+  const mode = picked ?? defaultMergeMode(filled.filter((w) => conflicts.includes(w.date)));
 
-  const modePicker = conflicts.length > 0 && (
-    <div className="rounded-lg bg-slate-50 p-2 text-sm dark:bg-slate-800">
-      <p className="mb-1.5">
-        {conflicts.map(shortDate).join(", ")} {conflicts.length === 1 ? "already has" : "already have"} a
-        workout:
-      </p>
-      <div className="flex gap-2" role="radiogroup" aria-label="Existing workout">
-        {(["replace", "append"] as const).map((m) => (
-          <button
-            key={m}
-            type="button"
-            role="radio"
-            aria-checked={mode === m}
-            onClick={() => setMode(m)}
-            className={`flex-1 rounded-lg px-2 py-1.5 text-sm font-medium ${
-              mode === m
-                ? "bg-sky-600 text-white"
-                : "bg-white text-slate-700 dark:bg-slate-900 dark:text-slate-200"
-            }`}
-          >
-            {m === "replace" ? "Replace it" : "Add to it"}
-          </button>
-        ))}
-      </div>
-    </div>
+  const modePicker = (
+    <ExistingWorkoutChoice
+      existing={filled.filter((w) => conflicts.includes(w.date))}
+      incoming={direction === "to" && current ? current.exercises : []}
+      mode={mode}
+      onMode={setPicked}
+    />
   );
 
   return (

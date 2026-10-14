@@ -136,6 +136,19 @@ await click(buttons().filter((b) => /Done$/.test(b.textContent.trim()) && b.getA
 assert(dayWorkout().exercises[0].status === "complete", "tapping Done marks it complete");
 assert(/1\/2 done/.test(host.textContent), "header shows 1/2 done");
 
+console.log("Copying onto a day with progress:");
+{
+  const radio = (re) => buttons().find((b) => b.getAttribute("role") === "radio" && re.test(b.textContent));
+  await click(btn(/Copy from…/));
+  assert(radio(/Add to it/)?.getAttribute("aria-checked") === "true", "a day with something done defaults to Add to it");
+  await click(radio(/Replace it/));
+  assert(/Replacing erases what you've done on 12 Oct \(1 exercise marked or logged\)/.test(host.textContent), "choosing Replace warns what it erases");
+  await click(radio(/Add to it/));
+  await click(btn(/Shoulder session/));
+  assert(dayWorkout().exercises.filter((e) => e.name === "Shrugs").length === 1, "copying a workout with Shrugs again doesn't add a second Shrugs");
+  assert(dayWorkout().exercises.find((e) => e.name === "Shrugs").status === "complete", "…and today's Shrugs keeps its progress");
+}
+
 await act(async () => root.unmount());
 
 console.log("Building an empty day with a new section:");

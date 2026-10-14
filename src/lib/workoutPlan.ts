@@ -9,6 +9,7 @@ import type {
 } from "../types";
 import { CATEGORY_LABELS, CATEGORY_ORDER } from "../types";
 import { uid } from "./id";
+import { hasLogged } from "./history";
 
 /** The content of a workout, independent of its date: what gets imported or copied. */
 export interface WorkoutBody {
@@ -47,10 +48,48 @@ export function freshCopy(body: WorkoutBody): WorkoutBody {
 
 const norm = (s: string) => s.trim().toLowerCase();
 
+type Named = Pick<WorkoutExercise, "exerciseId" | "name">;
+
+/** Same exercise: by library link when both have one, else by name. */
+const sameExercise = (a: Named, b: Named) =>
+  a.exerciseId && b.exerciseId ? a.exerciseId === b.exerciseId : norm(a.name) === norm(b.name);
+
+/**
+ * Which incoming items are already on the day: incoming index → existing index.
+ * Each existing item matches at most once, so an exercise the note lists twice
+ * is only skipped once.
+ */
+export function matchExisting(existing: Named[], incoming: Named[]): Map<number, number> {
+  const used = new Set<number>();
+  const out = new Map<number, number>();
+  incoming.forEach((inc, ii) => {
+    const ei = existing.findIndex((e, i) => !used.has(i) && sameExercise(e, inc));
+    if (ei >= 0) {
+      used.add(ei);
+      out.set(ii, ei);
+    }
+  });
+  return out;
+}
+
+/** Whether an item has been marked or logged — work that replacing would throw away. */
+export const hasProgress = (e: WorkoutExercise) => e.status !== "none" || hasLogged(e.metrics);
+
+export type MergeMode = "replace" | "append";
+
+/** Days with logged progress default to "Add to it", so nothing done is lost by accident. */
+export const defaultMergeMode = (existing: Pick<Workout, "exercises">[]): MergeMode =>
+  existing.some((w) => w.exercises.some(hasProgress)) ? "append" : "replace";
+
+const hasTarget = (p: Prescription | undefined) =>
+  !!p && [p.sets, p.reps, p.windowSec, p.holdSec, p.weight].some((v) => v != null);
+
 /**
  * Put `body` onto an existing workout.
  *  - replace: the existing content is discarded.
  *  - append: sections with the same title are merged (items + cues added).
+ *    Exercises the day already has are kept as they are, not added twice; a
+ *    kept one with no target yet (and nothing logged) takes the incoming target.
  */
 export function mergeBody(
   existing: WorkoutBody,
@@ -76,14 +115,31 @@ export function mergeBody(
       sections.push(s);
     }
   }
-  const added = fresh.exercises.map((e) => ({
-    ...e,
-    sectionId: e.sectionId ? (remap.get(e.sectionId) ?? e.sectionId) : undefined,
-  }));
+  const matches = matchExisting(existing.exercises, fresh.exercises);
+  const kept = existing.exercises.map((e) => ({ ...e }));
+  for (const [ii, ei] of matches) {
+    const mine = kept[ei];
+    const inc = fresh.exercises[ii];
+    if (!hasTarget(mine.prescription) && hasTarget(inc.prescription) && !hasProgress(mine)) {
+      kept[ei] = { ...mine, measureType: inc.measureType, prescription: inc.prescription };
+    }
+    if (!mine.notes && inc.notes) kept[ei] = { ...kept[ei], notes: inc.notes };
+  }
+  const added = fresh.exercises
+    .filter((_, i) => !matches.has(i))
+    .map((e) => ({
+      ...e,
+      sectionId: e.sectionId ? (remap.get(e.sectionId) ?? e.sectionId) : undefined,
+    }));
+  // A new section left with nothing in it (all its exercises were already here) is dropped.
+  const existingIds = new Set(existing.sections.map((s) => s.id));
+  const finalSections = sections.filter(
+    (s) => existingIds.has(s.id) || s.notes?.length || added.some((e) => e.sectionId === s.id),
+  );
   return {
     name: existing.name ?? fresh.name,
-    sections,
-    exercises: [...existing.exercises, ...added],
+    sections: finalSections,
+    exercises: [...kept, ...added],
   };
 }
 
