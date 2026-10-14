@@ -31,13 +31,18 @@ import type {
 } from "../types";
 import { activeWorkouts, useActiveExercises, useActiveWorkouts, useStore } from "../store/useStore";
 import {
+  combineSections,
   containerOf,
+  deleteSection,
+  hasProgress,
+  keepTargetOf,
   findSectionByTitle,
   groupItems,
   mergeDuplicateSections,
   isEmptyWorkout,
   lastUseOf,
   moveItemTo,
+  moveSectionTo,
   nextSectionTitle,
   prescriptionSummary,
   sectionByCategory,
@@ -74,6 +79,7 @@ export default function WorkoutDayView({ date }: { date: string }) {
   const [confirmClear, setConfirmClear] = useState(false);
   // A section just made with "＋ Section", whose name opens for editing.
   const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [reorderingSections, setReorderingSections] = useState(false);
   // While dragging: the previewed order (committed on drop).
   const [dragItems, setDragItems] = useState<WorkoutExercise[] | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -128,12 +134,16 @@ export default function WorkoutDayView({ date }: { date: string }) {
       ...w,
       sections: (w.sections ?? []).map((s) => (s.id === id ? { ...s, title } : s)),
     }));
-  const deleteSection = (id: string) =>
-    update((w) => ({
-      ...w,
-      sections: (w.sections ?? []).filter((s) => s.id !== id),
-      exercises: w.exercises.filter((e) => e.sectionId !== id),
-    }));
+  const removeSection = (id: string, keepExercises: boolean) => {
+    update((w) => deleteSection({ ...w, sections: w.sections ?? [] }, id, keepExercises));
+    if (adding?.sectionId === id) setAdding({});
+  };
+  const combineSection = (fromId: string, intoId: string) => {
+    update((w) => combineSections({ ...w, sections: w.sections ?? [] }, fromId, intoId));
+    if (adding?.sectionId === fromId) setAdding({ sectionId: intoId });
+  };
+  const moveSection = (id: string, index: number) =>
+    update((w) => ({ ...w, sections: moveSectionTo(w.sections ?? [], id, index) }));
 
   const sections = workout.sections ?? [];
   const shown = dragItems ?? workout.exercises;
@@ -397,20 +407,40 @@ export default function WorkoutDayView({ date }: { date: string }) {
               {renderItems("")}
             </div>
           )}
-          {sections.map((s) => (
-            <SectionBlock
-              key={s.id}
-              section={s}
-              hasItems={itemsIn(shown, s.id).length > 0}
-              startEditing={renamingId === s.id}
-              onRename={(t) => renameSection(s.id, t)}
-              onDoneEditing={() => setRenamingId(null)}
-              onDelete={() => deleteSection(s.id)}
-              onAdd={() => setAdding({ sectionId: s.id })}
-            >
-              {renderItems(s.id)}
-            </SectionBlock>
-          ))}
+          {reorderingSections && sections.length > 1 ? (
+            <SectionReorder
+              sections={sections}
+              counts={new Map(sections.map((s) => [s.id, itemsIn(shown, s.id).length]))}
+              onMove={moveSection}
+              onDone={() => setReorderingSections(false)}
+            />
+          ) : (
+            sections.map((s, i) => {
+              const items = itemsIn(shown, s.id);
+              return (
+                <SectionBlock
+                  key={s.id}
+                  section={s}
+                  index={i}
+                  count={sections.length}
+                  itemCount={items.length}
+                  progressCount={items.filter(hasProgress).length}
+                  keepTargetTitle={keepTargetOf(sections, s.id)?.title}
+                  others={sections.filter((o) => o.id !== s.id)}
+                  onCombine={(intoId) => combineSection(s.id, intoId)}
+                  startEditing={renamingId === s.id}
+                  onRename={(t) => renameSection(s.id, t)}
+                  onDoneEditing={() => setRenamingId(null)}
+                  onAdd={() => setAdding({ sectionId: s.id })}
+                  onMove={(dir) => moveSection(s.id, i + dir)}
+                  onReorder={() => setReorderingSections(true)}
+                  onDelete={(keep) => removeSection(s.id, keep)}
+                >
+                  {renderItems(s.id)}
+                </SectionBlock>
+              );
+            })
+          )}
         </div>
         <DragOverlay>
           {dragging && (
@@ -484,34 +514,69 @@ function GripIcon() {
 
 function SectionBlock({
   section,
-  hasItems,
+  index,
+  count,
+  itemCount,
+  progressCount,
+  keepTargetTitle,
+  others,
+  onCombine,
   startEditing,
   onRename,
   onDoneEditing,
-  onDelete,
   onAdd,
+  onMove,
+  onReorder,
+  onDelete,
   children,
 }: {
   section: WorkoutSection;
-  hasItems: boolean;
+  index: number;
+  count: number;
+  itemCount: number;
+  /** Exercises in it that are marked or logged. */
+  progressCount: number;
+  /** Where kept exercises would go if it's deleted. */
+  keepTargetTitle?: string;
+  /** The workout's other sections, to combine into. */
+  others: WorkoutSection[];
+  onCombine: (intoId: string) => void;
   startEditing?: boolean;
   onRename: (title: string) => void;
   onDoneEditing: () => void;
-  onDelete: () => void;
   onAdd: () => void;
+  onMove: (dir: -1 | 1) => void;
+  onReorder: () => void;
+  onDelete: (keepExercises: boolean) => void;
   children: React.ReactNode;
 }) {
   const [editing, setEditing] = useState(!!startEditing);
+  const [menu, setMenu] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [combining, setCombining] = useState(false);
+  // Renamed to another section's name: offer to combine instead of making a duplicate.
+  const [clash, setClash] = useState<WorkoutSection | null>(null);
+  const pick = (fn: () => void) => () => {
+    setMenu(false);
+    fn();
+  };
+  const menuItem = "block w-full px-3 py-2 text-left text-sm disabled:opacity-40";
+  const n = itemCount;
+
   return (
     <div>
-      <div className="mb-2 flex items-center justify-between gap-2">
+      <div className="relative mb-2 flex items-center justify-between gap-2">
         {editing ? (
           <input
             autoFocus
             defaultValue={section.title}
             onBlur={(e) => {
               const v = e.target.value.trim();
-              if (v && v !== section.title) onRename(v);
+              if (v && v !== section.title) {
+                const same = findSectionByTitle(others, v);
+                if (same) setClash(same);
+                else onRename(v);
+              }
               setEditing(false);
               onDoneEditing();
             }}
@@ -528,17 +593,143 @@ function SectionBlock({
             {section.title} <span className="font-normal normal-case">✎</span>
           </button>
         )}
-        <span className="flex shrink-0 gap-2 text-xs">
-          <button type="button" onClick={onAdd} className="text-sky-600 dark:text-sky-400">
+        <span className="flex shrink-0 items-center gap-1 text-xs">
+          <button type="button" onClick={onAdd} className="px-1 py-1 text-sky-600 dark:text-sky-400">
             ＋ Add
           </button>
-          {!hasItems && (
-            <button type="button" onClick={onDelete} className="text-slate-400 hover:text-red-500">
-              Delete
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setMenu((m) => !m)}
+            aria-label={`Section options for ${section.title}`}
+            aria-expanded={menu}
+            className="rounded-md px-2 py-1 text-base leading-none text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+          >
+            ⋯
+          </button>
         </span>
+        {menu && (
+          <>
+            {/* Tapping anywhere else closes the menu. */}
+            <button type="button" aria-label="Close menu" className="fixed inset-0 z-10 cursor-default" onClick={() => setMenu(false)} />
+            <div
+              role="menu"
+              className="absolute top-full right-0 z-20 mt-1 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-900"
+            >
+              <button type="button" role="menuitem" className={menuItem} onClick={pick(() => setEditing(true))}>
+                Rename
+              </button>
+              <button type="button" role="menuitem" className={menuItem} disabled={index === 0} onClick={pick(() => onMove(-1))}>
+                Move up
+              </button>
+              <button type="button" role="menuitem" className={menuItem} disabled={index === count - 1} onClick={pick(() => onMove(1))}>
+                Move down
+              </button>
+              {count > 1 && (
+                <button type="button" role="menuitem" className={menuItem} onClick={pick(onReorder)}>
+                  Reorder sections…
+                </button>
+              )}
+              {count > 1 && (
+                <button type="button" role="menuitem" className={menuItem} onClick={pick(() => setCombining(true))}>
+                  Combine with…
+                </button>
+              )}
+              <button
+                type="button"
+                role="menuitem"
+                className={`${menuItem} text-red-600 dark:text-red-400`}
+                // Nothing in it: nothing to ask about.
+                onClick={pick(() => (n ? setConfirmDelete(true) : onDelete(false)))}
+              >
+                Delete section…
+              </button>
+            </div>
+          </>
+        )}
       </div>
+      {clash && (
+        <div className="mb-2 space-y-2 rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm dark:border-sky-900 dark:bg-sky-950/40">
+          <p>
+            There's already a <span className="font-semibold">“{clash.title}”</span> section. Combine “{section.title}”
+            into it?
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setClash(null);
+              onCombine(clash.id);
+            }}
+            className="w-full rounded-lg bg-sky-600 px-3 py-2 text-left font-medium text-white"
+          >
+            Combine into {clash.title}
+          </button>
+          <button type="button" onClick={() => setClash(null)} className="w-full py-1 text-slate-500">
+            Cancel (keep “{section.title}”)
+          </button>
+        </div>
+      )}
+      {combining && (
+        <div className="mb-2 space-y-2 rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm dark:border-sky-900 dark:bg-sky-950/40">
+          <p>
+            <span className="font-semibold">Combine “{section.title}” into…</span>{" "}
+            {n
+              ? `Its ${n === 1 ? "1 exercise moves" : `${n} exercises move`} to the end of the section you pick.`
+              : "It's empty, so it's just removed."}
+          </p>
+          {others.map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              onClick={() => {
+                setCombining(false);
+                onCombine(o.id);
+              }}
+              className="w-full rounded-lg bg-white px-3 py-2 text-left font-medium dark:bg-slate-900"
+            >
+              {o.title}
+            </button>
+          ))}
+          <button type="button" onClick={() => setCombining(false)} className="w-full py-1 text-slate-500">
+            Cancel
+          </button>
+        </div>
+      )}
+      {confirmDelete && (
+        <div className="mb-2 space-y-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm dark:border-red-900 dark:bg-red-950/40">
+          <p>
+            <span className="font-semibold">Delete “{section.title}”?</span> It has {n} exercise{n === 1 ? "" : "s"}
+            {progressCount > 0 && (
+              <span className="font-medium text-red-700 dark:text-red-300">
+                {" "}({progressCount} with progress marked or logged)
+              </span>
+            )}
+            .
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setConfirmDelete(false);
+              onDelete(true);
+            }}
+            className="w-full rounded-lg bg-white px-3 py-2 text-left font-medium dark:bg-slate-900"
+          >
+            Keep the exercises → {keepTargetTitle ? <>move to {keepTargetTitle}</> : "leave them without a section"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setConfirmDelete(false);
+              onDelete(false);
+            }}
+            className="w-full rounded-lg bg-red-600 px-3 py-2 text-left font-medium text-white"
+          >
+            Delete the section and its {n} exercise{n === 1 ? "" : "s"}
+          </button>
+          <button type="button" onClick={() => setConfirmDelete(false)} className="w-full py-1 text-slate-500">
+            Cancel
+          </button>
+        </div>
+      )}
       {section.notes?.length ? (
         <ul className="mb-2 space-y-0.5 rounded-lg bg-amber-50 p-2 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
           {section.notes.map((n, i) => (
@@ -548,6 +739,79 @@ function SectionBlock({
       ) : null}
       {children}
     </div>
+  );
+}
+
+/** Compact list of section titles to drag into a new order. */
+function SectionReorder({
+  sections,
+  counts,
+  onMove,
+  onDone,
+}: {
+  sections: WorkoutSection[];
+  counts: Map<string, number>;
+  onMove: (id: string, index: number) => void;
+  onDone: () => void;
+}) {
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  return (
+    <div className="space-y-2 rounded-xl border border-sky-200 bg-sky-50/60 p-3 dark:border-sky-900 dark:bg-sky-950/30">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-semibold">Reorder sections</p>
+        <button type="button" onClick={onDone} className="rounded-lg bg-sky-600 px-3 py-1 text-sm font-medium text-white">
+          Done
+        </button>
+      </div>
+      <p className="text-[11px] text-slate-500">Drag by the handle. Exercises move with their section.</p>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCorners}
+        onDragEnd={({ active, over }) => {
+          if (over && active.id !== over.id) onMove(String(active.id), sections.findIndex((s) => s.id === over.id));
+        }}
+      >
+        <SortableContext items={sections.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+          <ul className="space-y-1.5">
+            {sections.map((s) => (
+              <SectionReorderRow key={s.id} section={s} count={counts.get(s.id) ?? 0} />
+            ))}
+          </ul>
+        </SortableContext>
+      </DndContext>
+    </div>
+  );
+}
+
+function SectionReorderRow({ section, count }: { section: WorkoutSection; count: number }) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
+    useSortable({ id: section.id });
+  return (
+    <li
+      ref={setNodeRef}
+      style={{ transform: CSS.Translate.toString(transform), transition }}
+      className={`flex items-center gap-2 rounded-lg border border-slate-200 bg-white py-1 pr-3 pl-1 dark:border-slate-700 dark:bg-slate-900 ${
+        isDragging ? "relative z-10 shadow-lg" : ""
+      }`}
+    >
+      <button
+        type="button"
+        ref={setActivatorNodeRef}
+        {...attributes}
+        {...listeners}
+        aria-label={`Drag to reorder section ${section.title}`}
+        className="flex min-h-10 w-8 shrink-0 cursor-grab touch-none items-center justify-center text-slate-400 active:cursor-grabbing"
+      >
+        <GripIcon />
+      </button>
+      <span className="min-w-0 flex-1 truncate text-sm font-medium">{section.title}</span>
+      <span className="shrink-0 text-xs text-slate-400">
+        {count} exercise{count === 1 ? "" : "s"}
+      </span>
+    </li>
   );
 }
 

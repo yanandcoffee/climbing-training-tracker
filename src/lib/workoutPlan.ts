@@ -346,3 +346,65 @@ export function moveItemTo(
       : rest.length;
   return [...rest.slice(0, at), moved, ...rest.slice(at)];
 }
+
+/** Move a section to position `index` in the workout's section order. */
+export function moveSectionTo(sections: WorkoutSection[], id: string, index: number): WorkoutSection[] {
+  const s = sections.find((x) => x.id === id);
+  if (!s) return sections;
+  const rest = sections.filter((x) => x.id !== id);
+  const i = Math.max(0, Math.min(index, rest.length));
+  return [...rest.slice(0, i), s, ...rest.slice(i)];
+}
+
+/** Where a deleted section's exercises go when kept: the section above, else the one below. */
+export function keepTargetOf(sections: WorkoutSection[], id: string): WorkoutSection | undefined {
+  const i = sections.findIndex((s) => s.id === id);
+  if (i < 0) return undefined;
+  return sections[i - 1] ?? sections[i + 1];
+}
+
+/**
+ * Combine section `fromId` into `intoId`: its exercises move to the end of
+ * `intoId` (keeping their progress), its cues are merged, and it's removed.
+ * `intoId` keeps its title and position.
+ */
+export function combineSections<T extends WorkoutBody>(body: T, fromId: string, intoId: string): T {
+  const from = body.sections.find((s) => s.id === fromId);
+  const into = body.sections.find((s) => s.id === intoId);
+  if (!from || !into || fromId === intoId) return body;
+  const moved = body.exercises.filter((e) => e.sectionId === fromId).map((e) => ({ ...e, sectionId: intoId }));
+  const others = body.exercises.filter((e) => e.sectionId !== fromId);
+  let at = others.length;
+  for (let i = others.length - 1; i >= 0; i--) {
+    if (others[i].sectionId === intoId) {
+      at = i + 1;
+      break;
+    }
+  }
+  const notes = [...(into.notes ?? [])];
+  for (const n of from.notes ?? []) if (!notes.includes(n)) notes.push(n);
+  return {
+    ...body,
+    sections: body.sections
+      .filter((s) => s.id !== fromId)
+      .map((s) => (s.id === intoId ? { ...s, notes: notes.length ? notes : undefined } : s)),
+    exercises: [...others.slice(0, at), ...moved, ...others.slice(at)],
+  };
+}
+
+/**
+ * Delete a section. Its exercises are deleted too, or kept and combined into
+ * the section above (else below; with no other section they're left
+ * unsectioned).
+ */
+export function deleteSection<T extends WorkoutBody>(body: T, id: string, keepExercises: boolean): T {
+  const sections = body.sections.filter((s) => s.id !== id);
+  if (!keepExercises) return { ...body, sections, exercises: body.exercises.filter((e) => e.sectionId !== id) };
+  const target = keepTargetOf(body.sections, id);
+  if (target) return combineSections(body, id, target.id);
+  return {
+    ...body,
+    sections,
+    exercises: body.exercises.map((e) => (e.sectionId === id ? { ...e, sectionId: undefined } : e)),
+  };
+}

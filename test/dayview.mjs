@@ -285,5 +285,114 @@ console.log("Exercises go to their category's section:");
   assert(day4().sections.length === 1 && day4().exercises.length === 2 && day4().exercises.every((e) => e.sectionId === day4().sections[0].id), "a plain list is organized by category on the next add");
   await act(async () => root4.unmount());
 }
+
+console.log("Section menu:");
+{
+  const DAY5 = "2026-10-22";
+  const ex = (id, name, sectionId, extra = {}) => ({ id, name, sectionId, category: "core", measureType: "reps", status: "none", ...extra });
+  st.applyWorkoutToDates(
+    {
+      sections: [
+        { id: "A", title: "Warm up" },
+        { id: "B", title: "Post climbing" },
+        { id: "C", title: "Empty one" },
+      ],
+      exercises: [ex("a1", "Wrist circles", "A"), ex("b1", "Rows", "B", { status: "complete" }), ex("b2", "Curls", "B")],
+    },
+    [DAY5],
+    "replace",
+  );
+  {
+    // Copying resets progress, so mark Rows done afterwards.
+    const w = activeWorkouts(useStore.getState()).find((x) => x.date === DAY5);
+    st.saveWorkout({ ...w, exercises: w.exercises.map((e) => (e.name === "Rows" ? { ...e, status: "complete" } : e)) });
+  }
+  const host5 = document.createElement("div");
+  document.body.appendChild(host5);
+  const root5 = createRoot(host5);
+  await act(async () =>
+    root5.render(React.createElement(MemoryRouter, null, React.createElement(WorkoutDayView, { date: DAY5 }))),
+  );
+  const day5 = () => activeWorkouts(useStore.getState()).find((w) => w.date === DAY5);
+  const titles = () => day5().sections.map((s) => s.title).join("|");
+  const b5 = (re) => [...host5.querySelectorAll("button")].find((b) => re.test(b.textContent));
+  const menuFor = (title) => host5.querySelector(`button[aria-label="Section options for ${title}"]`);
+  const item = (re) => [...host5.querySelectorAll('[role="menuitem"]')].find((b) => re.test(b.textContent));
+
+  await click(menuFor("Warm up"));
+  assert(!!item(/Rename/) && !!item(/Move down/) && !!item(/Reorder sections/) && !!item(/Delete section/), "⋯ opens Rename / Move / Reorder / Delete");
+  assert(item(/Move up/).disabled, "…Move up is disabled for the first section");
+  await click(item(/Move down/));
+  assert(titles() === "Post climbing|Warm up|Empty one", "Move down swaps it with the next section");
+  assert(!host5.querySelector('[role="menu"]'), "…and closes the menu");
+  await click(menuFor("Warm up"));
+  await click(item(/Move up/));
+  assert(titles() === "Warm up|Post climbing|Empty one", "Move up moves it back");
+
+  await click(menuFor("Warm up"));
+  await click(item(/Reorder sections/));
+  assert(/Reorder sections/.test(host5.textContent) && host5.querySelectorAll('button[aria-label^="Drag to reorder section"]').length === 3, "Reorder sections shows a compact draggable list");
+  assert(!host5.textContent.includes("Wrist circles"), "…without the exercises");
+  await click(b5(/^Done$/));
+  assert(host5.textContent.includes("Wrist circles"), "Done goes back to the workout");
+
+  // Combine with…: Empty one into Post climbing (then put things back for the delete tests).
+  await click(menuFor("Warm up"));
+  await click(item(/Combine with/));
+  assert(/Combine “Warm up” into… Its 1 exercise moves to the end/.test(host5.textContent.replace(/\s+/g, " ")), "Combine with… says what will move");
+  await click(b5(/^Post climbing$/));
+  assert(titles() === "Post climbing|Empty one", "combining removes the section");
+  assert(day5().exercises.map((e) => e.name).join(",") === "Rows,Curls,Wrist circles" && day5().exercises.every((e) => e.sectionId === day5().sections[0].id), "…and its exercises join the end of the chosen one");
+
+  // Renaming to an existing name asks before combining.
+  const rename = async (title, to) => {
+    await click([...host5.querySelectorAll("button[title='Rename section']")].find((b) => b.textContent.startsWith(title)));
+    const input = [...host5.querySelectorAll("input")].find((i) => i.defaultValue === title);
+    await blurWith(input, to);
+  };
+  await rename("Empty one", "post CLIMBING");
+  assert(titles() === "Post climbing|Empty one", "renaming to an existing section's name doesn't make a duplicate");
+  assert(/There's already a “Post climbing” section\. Combine “Empty one” into it\?/.test(host5.textContent), "…it asks to combine instead");
+  await click(b5(/^Cancel \(keep/));
+  assert(titles() === "Post climbing|Empty one", "Cancel keeps both as they were");
+  await rename("Empty one", "Post climbing");
+  await click(b5(/^Combine into Post climbing$/));
+  assert(titles() === "Post climbing", "Combine merges them");
+
+  // Restore a Warm up section above for the delete tests.
+  await act(async () => {
+    const w = day5();
+    st.saveWorkout({
+      ...w,
+      sections: [{ id: "A", title: "Warm up" }, { ...w.sections[0] }, { id: "C", title: "Empty one" }],
+      exercises: w.exercises.map((e) => (e.name === "Wrist circles" ? { ...e, sectionId: "A" } : e)),
+    });
+  });
+
+  await click(menuFor("Empty one"));
+  await click(item(/Delete section/));
+  assert(titles() === "Warm up|Post climbing", "an empty section is deleted without asking");
+
+  await click(menuFor("Post climbing"));
+  await click(item(/Delete section/));
+  const text5 = host5.textContent.replace(/\s+/g, " ");
+  assert(/Delete “Post climbing”\? It has 2 exercises \(1 with progress marked or logged\)/.test(text5), "deleting a section with exercises asks first, noting progress");
+  assert(!!b5(/Keep the exercises → move to Warm up/) && !!b5(/Delete the section and its 2 exercises/), "…offering to keep them (named destination) or delete them");
+  await click(b5(/^Cancel$/));
+  assert(titles() === "Warm up|Post climbing", "Cancel changes nothing");
+
+  await click(menuFor("Post climbing"));
+  await click(item(/Delete section/));
+  await click(b5(/Keep the exercises/));
+  assert(titles() === "Warm up" && day5().exercises.map((e) => e.name).join(",") === "Wrist circles,Rows,Curls", "keeping moves them into Warm up");
+  assert(day5().exercises.every((e) => e.sectionId === day5().sections[0].id) && day5().exercises[1].status === "complete", "…with their progress");
+
+  await click(menuFor("Warm up"));
+  await click(item(/Delete section/));
+  assert(!!b5(/leave them without a section/), "the last section offers to leave its exercises without a section");
+  await click(b5(/Delete the section and its 3 exercises/));
+  assert(day5().sections.length === 0 && day5().exercises.length === 0, "deleting with its exercises removes them all");
+  await act(async () => root5.unmount());
+}
 console.log(failures === 0 ? "\nDAY VIEW OK ✅" : `\n${failures} FAILURES ❌`);
 process.exit(failures ? 1 : 0);

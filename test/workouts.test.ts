@@ -8,6 +8,10 @@ import {
   itemFromExercise,
   lastUseOf,
   defaultMergeMode,
+  combineSections,
+  deleteSection,
+  keepTargetOf,
+  moveSectionTo,
   hasProgress,
   matchExisting,
   mergeBody,
@@ -334,6 +338,41 @@ console.log("Sections and drag-and-drop moves:");
   assert(out.find((e) => e.id === "d")?.sectionId === undefined, "the no-section list accepts a drop");
   const preview = moveItemTo(items, sections, "c", "s1", 1, { regroup: false });
   assert(preview[1].group === undefined, "drag previews don't regroup until the drop");
+}
+
+console.log("Moving and deleting sections:");
+{
+  const ex = (id: string, sectionId?: string) =>
+    ({ id, name: id, sectionId, category: "core", measureType: "reps", status: "none" }) as WorkoutBody["exercises"][number];
+  const body: WorkoutBody = {
+    sections: [
+      { id: "A", title: "Warm up", notes: ["Easy"] },
+      { id: "B", title: "Post climbing", notes: ["Slow", "Easy"] },
+      { id: "C", title: "Cool down" },
+    ],
+    exercises: [ex("a1", "A"), ex("b1", "B"), ex("a2", "A"), ex("b2", "B"), ex("c1", "C")],
+  };
+  const ids = (l: { id: string }[]) => l.map((x) => x.id).join("");
+  assert(ids(moveSectionTo(body.sections, "C", 0)) === "CAB", "a section moves to a new position");
+  assert(ids(moveSectionTo(body.sections, "A", 1)) === "BAC", "…one step down");
+  assert(ids(moveSectionTo(body.sections, "A", 9)) === "BCA", "…clamped to the end");
+  assert(keepTargetOf(body.sections, "B")?.id === "A" && keepTargetOf(body.sections, "A")?.id === "B", "kept exercises go to the section above, else below");
+
+  const gone = deleteSection(body, "B", false);
+  assert(ids(gone.sections) === "AC" && ids(gone.exercises) === "a1a2c1", "deleting with its exercises removes both");
+  const kept = deleteSection(body, "B", true);
+  assert(ids(kept.sections) === "AC", "deleting but keeping removes only the section");
+  assert(ids(kept.exercises.filter((e) => e.sectionId === "A")) === "a1a2b1b2", "…its exercises join the end of the section above");
+  assert(kept.sections[0].notes?.join("|") === "Easy|Slow", "…bringing its cues along");
+  const first = deleteSection(body, "A", true);
+  assert(ids(first.exercises.filter((e) => e.sectionId === "B")) === "b1b2a1a2", "deleting the first section moves its exercises to the next one");
+  const comb = combineSections(body, "A", "C");
+  assert(ids(comb.sections) === "BC" && comb.sections[1].title === "Cool down", "combining removes the first section; the target keeps its name and place");
+  assert(ids(comb.exercises.filter((e) => e.sectionId === "C")) === "c1a1a2", "…its exercises go to the end of the target, in order");
+  assert(comb.sections[1].notes?.join("|") === "Easy", "…and its cues come along");
+  assert(combineSections(body, "A", "A") === body && combineSections(body, "A", "zzz") === body, "combining with itself or a missing section does nothing");
+  const only = deleteSection({ sections: [body.sections[0]], exercises: [ex("a1", "A")] }, "A", true);
+  assert(only.sections.length === 0 && only.exercises[0].sectionId === undefined, "the only section's exercises are left without a section");
 }
 
 console.log(failures === 0 ? "\nWORKOUTS OK ✅" : `\n${failures} FAILURES ❌`);
