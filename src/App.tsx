@@ -21,7 +21,7 @@ export default function App() {
   }, [hydrate]);
 
   return (
-    <div className="min-h-full bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+    <div className="app-shell bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       <main className="mx-auto max-w-xl px-4 pt-safe pb-28">
         {loaded ? (
           <Routes>

@@ -18,6 +18,39 @@ body,
   height: 100%;
 }
 
+/* Match the app background so no stray band of the page canvas ever shows */
+html {
+  background: #f8fafc; /* slate-50 */
+}
+@media (prefers-color-scheme: dark) {
+  html {
+    background: #020617; /* slate-950 */
+  }
+}
+
+.app-shell {
+  min-height: 100%;
+}
+
+/*
+ * iOS 26+ home-screen app bug (WebKit 301108): with viewport-fit=cover and the
+ * black-translucent status bar, 100% / svh / dvh come out one status-bar height
+ * short of the screen. On a short page (Today with no workout, Calendar) the
+ * document ended above the bottom, so the fixed tab bar floated up with a black
+ * band under it, and iOS doesn't even paint that band unless the page reaches
+ * it. lvh is the real screen height, so the page always reaches the bottom.
+ * Checked in the iOS 27 simulator: tab bar at the bottom, page doesn't scroll.
+ */
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  html,
+  body,
+  #root,
+  .app-shell {
+    height: auto;
+    min-height: 100lvh;
+  }
+}
+
 body {
   margin: 0;
   -webkit-tap-highlight-color: transparent;
