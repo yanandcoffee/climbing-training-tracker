@@ -197,6 +197,74 @@ assert(
   "re-saving the same values (e.g. blurring the field) does not re-stamp",
 );
 
+// Undo: each change can be taken back; a change made in one go is one step
+console.log("Undo:");
+{
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+  const st = () => useStore.getState();
+  await tick();
+  const depth = st().undoStack.length;
+
+  const hang = st().addExercise({ name: "Hang", category: "strength_conditioning", measureType: "hold" });
+  await tick();
+  assert(st().undoStack.at(-1)?.label === "Added Hang", "adding an exercise is undoable");
+  st().updateExercise(hang.id, { name: "Repeaters" });
+  await tick();
+  const before = st().exercises.find((e) => e.id === hang.id)!;
+  st().undo();
+  const restored = st().exercises.find((e) => e.id === hang.id)!;
+  assert(restored.name === "Hang" && restored.updatedAt >= before.updatedAt, "undo puts the old name back, stamped as a new edit (wins on sync)");
+  st().undo();
+  assert(st().exercises.find((e) => e.id === hang.id)?.deletedAt != null, "undoing the add removes the exercise");
+  assert(st().undoStack.length === depth, "each undo uses up one step");
+
+  // A new library exercise added to a workout in one go → one step.
+  const day = "2026-03-01";
+  const w0 = st().getOrCreateWorkoutForDate(day);
+  const lunge = st().addExercise({ name: "Lunge", category: "strength_conditioning", measureType: "reps" });
+  st().saveWorkout(
+    { ...w0, exercises: [{ id: "l1", exerciseId: lunge.id, name: "Lunge", category: "strength_conditioning", measureType: "reps", status: "none" }] },
+    "Added Lunge",
+  );
+  await tick();
+  assert(st().undoStack.length === depth + 1, "creating an exercise and adding it to the day is one step");
+  const wDay = () => activeWorkouts(st()).find((w) => w.date === day)!;
+  st().saveWorkout({ ...wDay(), exercises: wDay().exercises.map((e) => ({ ...e, status: "complete" as const })) }, "Marked Lunge Done");
+  await tick();
+  st().undo();
+  assert(wDay().exercises[0].status === "none", "undo un-marks the exercise");
+  st().undo();
+  assert(wDay().exercises.length === 0 && st().exercises.find((e) => e.id === lunge.id)?.deletedAt != null, "…then removes both the item and the new library exercise");
+
+  st().saveWorkout({ ...wDay(), name: "Auto repair" }, false);
+  await tick();
+  assert(st().undoStack.length === depth, "automatic repairs aren't undo steps");
+
+  // Filling a day that had no record, then undoing, leaves one empty record for that date.
+  st().applyWorkoutToDates({ sections: [], exercises: [{ id: "x", name: "Plank", category: "core", measureType: "hold", status: "none" }] }, ["2026-03-09"], "replace");
+  await tick();
+  st().undo();
+  const march9 = st().workouts.filter((w) => w.date === "2026-03-09");
+  assert(march9.length === 1 && !march9[0].deletedAt && march9[0].exercises.length === 0, "undoing a copy onto a new day empties it (one record per date)");
+
+  // Change the type on every entry of an exercise.
+  const rep = st().addExercise({ name: "Rep hang", category: "strength_conditioning", measureType: "intervals" });
+  const item = (id: string) => ({ id, exerciseId: rep.id, name: "Rep hang", category: "strength_conditioning" as const, measureType: "hold" as const, status: "none" as const, prescription: { sets: 5, holdSec: 7 } });
+  st().applyWorkoutToDates({ sections: [], exercises: [item("a")] }, ["2026-03-02"], "replace");
+  st().applyWorkoutToDates({ sections: [], exercises: [item("b")] }, ["2026-03-03"], "replace");
+  await tick();
+  const types = () => activeWorkouts(st()).flatMap((w) => w.exercises.filter((e) => e.exerciseId === rep.id).map((e) => e.measureType));
+  st().retypeExerciseEntries(rep.id, "intervals");
+  await tick();
+  assert(types().length === 2 && types().every((t) => t === "intervals"), "change all: every day's entry becomes intervals");
+  assert(activeWorkouts(st()).find((w) => w.date === "2026-03-02")!.exercises[0].prescription?.holdSec === 7, "…keeping the target");
+  st().undo();
+  assert(types().every((t) => t === "hold"), "…and one undo switches them all back");
+
+  await st().hydrate();
+  assert(st().undoStack.length === 0, "a reload starts with nothing to undo");
+}
+
 // Export/import round-trip
 const snap = useStore.getState().exportSnapshot();
 assert(snap.workouts.length >= 1 && snap.checkIns.length >= 1, "snapshot contains data");

@@ -85,7 +85,7 @@ export default function CopyWorkoutDialog({
                     <button
                       type="button"
                       onClick={() => {
-                        applyWorkoutToDates(bodyOf(w), [date], mode);
+                        applyWorkoutToDates(bodyOf(w), [date], mode, "Copied workout");
                         onClose();
                       }}
                       className="w-full rounded-xl border border-slate-200 p-3 text-left dark:border-slate-700"
@@ -114,6 +114,7 @@ export default function CopyWorkoutDialog({
                   bodyOf(current),
                   targets.filter((d) => d !== date),
                   mode,
+                  "Copied workout to other days",
                 );
                 onClose();
               }}

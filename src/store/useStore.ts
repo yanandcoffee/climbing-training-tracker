@@ -5,6 +5,7 @@ import type {
   DayColor,
   Exercise,
   Metrics,
+  MeasureType,
   ExerciseStatus,
   ScheduleEntry,
   Settings,
@@ -26,8 +27,24 @@ import { mergeRows, SYNCED_SETTING_KEYS, type Row } from "../sync/engine";
 
 const adapter: StorageAdapter = new LocalStorageAdapter();
 
+/**
+ * One undoable change: the previous version of each record it touched
+ * (null = the change created it). In memory only; a reload starts fresh.
+ */
+export interface UndoStep {
+  id: number;
+  label: string;
+  exercises: Record<string, Exercise | null>;
+  workouts: Record<string, Workout | null>;
+}
+
+/** Undo label: a short description, or false for automatic repairs that shouldn't be undoable. */
+type Label = string | false;
+
 interface State {
   loaded: boolean;
+  /** Most recent last. */
+  undoStack: UndoStep[];
   checkIns: CheckIn[];
   exercises: Exercise[];
   workouts: Workout[];
@@ -43,17 +60,20 @@ interface State {
     data: { color: DayColor; quality: number; note?: string },
   ) => void;
 
-  addExercise: (data: Omit<Exercise, keyof SyncedKeys>) => Exercise;
-  updateExercise: (id: string, patch: Partial<Exercise>) => void;
+  addExercise: (data: Omit<Exercise, keyof SyncedKeys>, label?: Label) => Exercise;
+  updateExercise: (id: string, patch: Partial<Exercise>, label?: Label) => void;
   deleteExercise: (id: string) => void;
+  /** Switch every workout entry of a library exercise to one measure type. */
+  retypeExerciseEntries: (exerciseId: string, measureType: MeasureType) => void;
 
   getOrCreateWorkoutForDate: (date: string) => Workout;
-  saveWorkout: (workout: Workout) => void;
+  saveWorkout: (workout: Workout, label?: Label) => void;
   /** Put a workout's content (imported or copied) onto each of `dates`. */
   applyWorkoutToDates: (
     body: WorkoutBody,
     dates: string[],
     mode: "replace" | "append",
+    label?: Label,
   ) => void;
   setExerciseStatus: (
     workoutId: string,
@@ -65,6 +85,9 @@ interface State {
     exerciseId: string,
     metrics: Metrics,
   ) => void;
+
+  /** Put back the records the latest change touched. */
+  undo: () => void;
 
   setSettings: (patch: Partial<Settings>) => void;
   /** Replace settings with a version reconciled from the account (no re-stamp). */
@@ -95,6 +118,20 @@ function snapshotOf(s: State): Snapshot {
   };
 }
 
+/** The previous version of each record that `next` adds or changes (by reference). */
+function changedFrom<T extends SyncedKeys>(prev: T[], next: T[]): Record<string, T | null> {
+  const byId = new Map(prev.map((r) => [r.id, r]));
+  const out: Record<string, T | null> = {};
+  for (const r of next) {
+    const before = byId.get(r.id);
+    if (before !== r) out[r.id] = before ?? null;
+  }
+  return out;
+}
+
+const UNDO_LIMIT = 50;
+let undoIds = 0;
+
 export const useStore = create<State>((set, get) => {
   // Persist after any mutation. `partial` is the state slice to merge.
   // Never before hydrate() has loaded: the store starts empty, and saving it
@@ -105,14 +142,42 @@ export const useStore = create<State>((set, get) => {
     if (get().loaded) void adapter.save(snapshotOf(get()));
   };
 
+  // Changes made in one go (e.g. a new library exercise and the workout it's
+  // added to) share one undo step: it stays open until the current task ends.
+  let openStep: UndoStep | null = null;
+  const persistUndoable = (label: Label, partial: Pick<Partial<State>, "exercises" | "workouts">) => {
+    if (label === false) return persist(partial);
+    const exercises = partial.exercises ? changedFrom(get().exercises, partial.exercises) : {};
+    const workouts = partial.workouts ? changedFrom(get().workouts, partial.workouts) : {};
+    if (!Object.keys(exercises).length && !Object.keys(workouts).length) return persist(partial);
+    let undoStack = get().undoStack;
+    if (openStep && undoStack[undoStack.length - 1] === openStep) {
+      // Keep the oldest version of each record: undo goes back to before the whole group.
+      openStep = {
+        ...openStep,
+        label,
+        exercises: { ...exercises, ...openStep.exercises },
+        workouts: { ...workouts, ...openStep.workouts },
+      };
+      undoStack = [...undoStack.slice(0, -1), openStep];
+    } else {
+      openStep = { id: ++undoIds, label, exercises, workouts };
+      undoStack = [...undoStack, openStep].slice(-UNDO_LIMIT);
+      setTimeout(() => (openStep = null), 0);
+    }
+    persist({ ...partial, undoStack });
+  };
+
   return {
     loaded: false,
+    undoStack: [],
     ...emptySnapshot(),
 
     hydrate: async () => {
       const snap = (await adapter.load()) ?? emptySnapshot();
       set({
         loaded: true,
+        undoStack: [],
         checkIns: snap.checkIns,
         exercises: snap.exercises,
         workouts: snap.workouts,
@@ -142,23 +207,40 @@ export const useStore = create<State>((set, get) => {
       persist({ checkIns });
     },
 
-    addExercise: (data) => {
+    addExercise: (data, label = `Added ${data.name}`) => {
       const ex = stamp<Exercise>(data);
-      persist({ exercises: [...get().exercises, ex] });
+      persistUndoable(label, { exercises: [...get().exercises, ex] });
       return ex;
     },
-    updateExercise: (id, patch) =>
-      persist({
+    updateExercise: (id, patch, label) =>
+      persistUndoable(label ?? `Edited ${get().exercises.find((e) => e.id === id)?.name ?? "exercise"}`, {
         exercises: get().exercises.map((e) =>
           e.id === id ? { ...e, ...patch, updatedAt: Date.now() } : e,
         ),
       }),
     deleteExercise: (id) =>
-      persist({
+      persistUndoable(`Deleted ${get().exercises.find((e) => e.id === id)?.name ?? "exercise"}`, {
         exercises: get().exercises.map((e) =>
           e.id === id ? { ...e, deletedAt: Date.now(), updatedAt: Date.now() } : e,
         ),
       }),
+    retypeExerciseEntries: (exerciseId, measureType) => {
+      const now = Date.now();
+      const name = get().exercises.find((e) => e.id === exerciseId)?.name ?? "exercise";
+      persistUndoable(`Changed the type of every ${name}`, {
+        workouts: get().workouts.map((w) =>
+          !w.deletedAt && w.exercises.some((e) => e.exerciseId === exerciseId && e.measureType !== measureType)
+            ? {
+                ...w,
+                updatedAt: now,
+                exercises: w.exercises.map((e) =>
+                  e.exerciseId === exerciseId ? { ...e, measureType } : e,
+                ),
+              }
+            : w,
+        ),
+      });
+    },
 
     getOrCreateWorkoutForDate: (date) => {
       const found = get().workouts.find((w) => w.date === date && !w.deletedAt);
@@ -176,17 +258,17 @@ export const useStore = create<State>((set, get) => {
       return workout;
     },
 
-    saveWorkout: (workout) => {
+    saveWorkout: (workout, label = "Changed workout") => {
       const exists = get().workouts.some((w) => w.id === workout.id);
       const updated = { ...workout, updatedAt: Date.now() };
-      persist({
+      persistUndoable(label, {
         workouts: exists
           ? get().workouts.map((w) => (w.id === workout.id ? updated : w))
           : [...get().workouts, updated],
       });
     },
 
-    applyWorkoutToDates: (body, dates, mode) => {
+    applyWorkoutToDates: (body, dates, mode, label = "Filled in workout") => {
       const now = Date.now();
       let workouts = get().workouts;
       for (const date of new Set(dates)) {
@@ -210,11 +292,11 @@ export const useStore = create<State>((set, get) => {
           ? workouts.map((w) => (w.id === existing.id ? next : w))
           : [...workouts, next];
       }
-      persist({ workouts });
+      persistUndoable(label, { workouts });
     },
 
     setExerciseStatus: (workoutId, exerciseId, status) =>
-      persist({
+      persistUndoable("Marked exercise", {
         workouts: get().workouts.map((w) =>
           w.id === workoutId
             ? {
@@ -229,7 +311,7 @@ export const useStore = create<State>((set, get) => {
       }),
 
     setExerciseMetrics: (workoutId, exerciseId, metrics) =>
-      persist({
+      persistUndoable("Logged exercise", {
         workouts: get().workouts.map((w) =>
           w.id === workoutId
             ? {
@@ -244,6 +326,29 @@ export const useStore = create<State>((set, get) => {
             : w,
         ),
       }),
+
+    undo: () => {
+      const stack = get().undoStack;
+      const step = stack[stack.length - 1];
+      if (!step) return;
+      if (openStep === step) openStep = null;
+      // Re-stamped as a new edit, so the undo also wins on other devices.
+      const now = Date.now();
+      const exercises = get().exercises.map((e) => {
+        if (!(e.id in step.exercises)) return e;
+        const before = step.exercises[e.id];
+        return before ? { ...before, updatedAt: now } : { ...e, deletedAt: now, updatedAt: now };
+      });
+      // A workout the change created goes back to an empty day (one record per date).
+      const workouts = get().workouts.map((w) => {
+        if (!(w.id in step.workouts)) return w;
+        const before = step.workouts[w.id];
+        return before
+          ? { ...before, updatedAt: now }
+          : { ...w, name: undefined, sections: [], exercises: [], updatedAt: now };
+      });
+      persist({ exercises, workouts, undoStack: stack.slice(0, -1) });
+    },
 
     setSettings: (patch) => {
       // Stamp changes to the account-synced AI settings so the newest edit wins.
@@ -269,6 +374,7 @@ export const useStore = create<State>((set, get) => {
     importSnapshot: (snapshot) => {
       const s = normalizeSnapshot({ ...emptySnapshot(), ...snapshot });
       persist({
+        undoStack: [],
         checkIns: s.checkIns,
         exercises: s.exercises,
         workouts: s.workouts,
@@ -291,6 +397,7 @@ export const useStore = create<State>((set, get) => {
     clearAll: () => {
       const base = emptySnapshot();
       persist({
+        undoStack: [],
         checkIns: [],
         exercises: [],
         workouts: [],

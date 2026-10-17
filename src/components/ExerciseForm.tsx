@@ -74,7 +74,8 @@ export default function ExerciseForm({
 
       <p className="text-[11px] text-slate-400">
         Sets, reps and load are set per workout, so the same exercise can progress week to week.
-        The measure type is just the default when you add it to a workout.
+        The measure type is just the default when you add it to a workout; to switch days it's
+        already on, open the exercise's page.
       </p>
 
       <input

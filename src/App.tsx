@@ -3,6 +3,7 @@ import { Routes, Route } from "react-router-dom";
 import { useStore } from "./store/useStore";
 import { useSync } from "./sync/useSync";
 import BottomNav from "./components/BottomNav";
+import UndoToast from "./components/UndoButton";
 import TodayScreen from "./screens/TodayScreen";
 import CalendarScreen from "./screens/CalendarScreen";
 import DayScreen from "./screens/DayScreen";
@@ -22,7 +23,7 @@ export default function App() {
 
   return (
     <div className="app-shell bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-      <main className="mx-auto max-w-xl px-4 pt-safe pb-28">
+      <main className="mx-auto max-w-xl px-4 pt-safe pb-36">
         {loaded ? (
           <Routes>
             <Route path="/" element={<TodayScreen />} />
@@ -37,6 +38,7 @@ export default function App() {
           <div className="py-20 text-center text-slate-400">Loading…</div>
         )}
       </main>
+      <UndoToast />
       <BottomNav />
     </div>
   );

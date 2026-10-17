@@ -83,7 +83,7 @@ export default function ImportNotesDialog({
       library,
       createExercise: (data) => addExercise(data),
     });
-    applyWorkoutToDates(body, dates, mode);
+    applyWorkoutToDates(body, dates, mode, "Imported coach's note");
     onClose();
   };
 

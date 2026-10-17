@@ -421,6 +421,7 @@ console.log("\nOn/off intervals and signed loads");
   );
   assert(prescriptionSummary("hold", { sets: 3, holdSec: 10 }) === "3 × 10s hold", "…other types with no load stay unloaded");
   assert(prescriptionSummary("intervals", {}) === "", "…but an empty interval target stays blank");
+  assert(prescriptionSummary("intervals", { sets: 3, holdSec: 10, weight: 10 }) === "3 × 10s on @ 10 lb", "a hold re-typed as intervals (no off time) reads 3 × 10s on");
   const doneBw = effectiveMetrics("complete", "intervals", { sets: 5, holdSec: 7, restSec: 3 }, {});
   assert(doneBw.weight === 0, "an interval with no load set charts at bodyweight when done");
   assert(effectiveMetrics("complete", "hold", { holdSec: 10 }, {}).weight === undefined, "…a hold with no load doesn't");

@@ -239,8 +239,10 @@ export function prescriptionSummary(measureType: MeasureType, p: Prescription | 
       core = pr.holdSec ? `${setsX}${pr.holdSec}s hold` : sets ? `${sets} sets` : "";
       break;
     case "intervals": {
-      const onOff =
-        pr.holdSec != null || pr.restSec != null ? `${pr.holdSec ?? "?"}s on / ${pr.restSec ?? "?"}s off` : "";
+      // Either half may be missing, e.g. a hold re-typed as intervals has no off time yet.
+      const onOff = [pr.holdSec != null && `${pr.holdSec}s on`, pr.restSec != null && `${pr.restSec}s off`]
+        .filter(Boolean)
+        .join(" / ");
       core = pr.reps
         ? `${sets ? `${sets} sets × ` : ""}${pr.reps} reps${onOff ? ` · ${onOff}` : ""}`
         : onOff

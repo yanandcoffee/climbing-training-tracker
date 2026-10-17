@@ -459,5 +459,91 @@ console.log("On/off intervals and loads:");
   assert([...host6.querySelectorAll("label")].some((l) => /^Reps$/.test(l.firstChild?.textContent ?? "")), "…and each set logs reps instead of seconds");
   await act(async () => root6.unmount());
 }
+console.log("Undo, duplicate and change all types:");
+{
+  const { Routes, Route } = await jiti.import("react-router-dom");
+  const UndoButton = (await jiti.import("../src/components/UndoButton")).default;
+  const ExercisesScreen = (await jiti.import("../src/screens/ExercisesScreen")).default;
+  const ExerciseDetailScreen = (await jiti.import("../src/screens/ExerciseDetailScreen")).default;
+  const tick = () => act(async () => new Promise((r) => setTimeout(r, 5)));
+  const DAY7 = "2026-10-27";
+  const hang = st.addExercise({ name: "Max hang", category: "strength_conditioning", measureType: "hold" });
+  st.applyWorkoutToDates(
+    {
+      sections: [],
+      exercises: [{ id: "h", exerciseId: hang.id, name: "Max hang", category: "strength_conditioning", measureType: "hold", status: "none", prescription: { sets: 3, holdSec: 10 } }],
+    },
+    [DAY7],
+    "replace",
+  );
+  await tick();
+  const host7 = document.createElement("div");
+  document.body.appendChild(host7);
+  const root7 = createRoot(host7);
+  const h = React.createElement;
+  const render7 = (path) =>
+    act(async () =>
+      root7.render(
+        h(
+          MemoryRouter,
+          { key: path, initialEntries: [path] },
+          h(Routes, null,
+            h(Route, { path: "/day/:date", element: h(WorkoutDayView, { date: DAY7 }) }),
+            h(Route, { path: "/exercises", element: h(ExercisesScreen) }),
+            h(Route, { path: "/exercise/:id", element: h(ExerciseDetailScreen) }),
+          ),
+          h(UndoButton),
+        ),
+      ),
+    );
+  await render7(`/day/${DAY7}`);
+  const items7 = () => activeWorkouts(useStore.getState()).find((w) => w.date === DAY7).exercises;
+  const b7 = (re) => [...host7.querySelectorAll("button")].find((b) => re.test(b.textContent));
+  const undoBtn = () => host7.querySelector('button[aria-label^="Undo"]');
+
+  await click(b7(/Done$/));
+  assert(items7()[0].status === "complete", "marked Done");
+  assert(/Marked Max hang done/.test(host7.textContent) && !!undoBtn(), "the Undo button names the change");
+  await click(undoBtn());
+  assert(items7()[0].status === "none", "Undo un-marks it");
+  assert(/Undid: Marked Max hang done/.test(host7.textContent), "…and says what it undid");
+
+  await click(b7(/^Max hang/));
+  await click(b7(/^Duplicate$/));
+  assert(items7().length === 2 && items7()[1].name === "Max hang" && items7()[1].id !== "h", "Duplicate adds a copy right below");
+  assert(items7()[1].prescription?.holdSec === 10 && items7()[1].status === "none", "…with the same target and fresh progress");
+  await tick();
+  await click(undoBtn());
+  assert(items7().length === 1, "Undo removes the copy");
+
+  // Library: duplicate, then fix past days' type from the exercise page.
+  await render7("/exercises");
+  const row = () => [...host7.querySelectorAll("li")].find((li) => /^Max hang/.test(li.querySelector("a")?.textContent ?? ""));
+  await click([...row().querySelectorAll("button")].find((b) => b.textContent === "Duplicate"));
+  const copy = useStore.getState().exercises.find((e) => e.name === "Max hang (copy)" && !e.deletedAt);
+  assert(!!copy && copy.measureType === "hold" && copy.category === "strength_conditioning", "library Duplicate makes “Max hang (copy)”");
+  assert(host7.querySelector('input[placeholder="Exercise name"]')?.value === "Max hang (copy)", "…and opens it to rename");
+  await tick();
+  await click(undoBtn());
+  assert(useStore.getState().exercises.find((e) => e.id === copy.id)?.deletedAt != null, "Undo removes the duplicate");
+
+  await act(async () => useStore.getState().updateExercise(hang.id, { measureType: "intervals" }));
+  await render7(`/exercise/${hang.id}`);
+  assert(/1 day has it as Timed hold, not On \/ off intervals/.test(host7.textContent), "the exercise page notices a day with another type");
+  await click(b7(/^Change it to On \/ off intervals/));
+  assert(items7()[0].measureType === "intervals", "Change it switches that day to intervals");
+  assert(!/day has it as/.test(host7.textContent), "…and the notice goes away");
+  await tick();
+  await click(undoBtn());
+  assert(items7()[0].measureType === "hold", "Undo switches it back");
+  assert(!!host7.querySelector("header") && !![...host7.querySelectorAll("header button")].find((b) => b.textContent === "↶ Undo"), "the exercise page has its own Undo button");
+  await act(async () => {
+    while (useStore.getState().undoStack.length) useStore.getState().undo();
+  });
+  await render7("/exercises");
+  const inline = [...host7.querySelectorAll("header button")].find((b) => b.textContent === "↶ Undo");
+  assert(inline?.disabled && inline.getAttribute("aria-label") === "Nothing to undo", "…greyed out when there's nothing left to undo");
+  await act(async () => root7.unmount());
+}
 console.log(failures === 0 ? "\nDAY VIEW OK ✅" : `\n${failures} FAILURES ❌`);
 process.exit(failures ? 1 : 0);

@@ -5,6 +5,7 @@ import { CATEGORY_LABELS, CATEGORY_ORDER, MEASURE_LABELS } from "../types";
 import { useActiveExercises, useStore } from "../store/useStore";
 import ExerciseForm, { type ExerciseDraft } from "../components/ExerciseForm";
 import { ExerciseMediaThumb } from "../components/ExerciseMedia";
+import { UndoInlineButton } from "../components/UndoButton";
 
 export default function ExercisesScreen() {
   const exercises = useActiveExercises();
@@ -28,6 +29,7 @@ export default function ExercisesScreen() {
       <header className="flex min-h-16 items-center justify-between">
         <h1 className="text-xl font-bold">Exercises</h1>
         <div className="flex gap-2">
+          <UndoInlineButton className="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200" />
           <button
             type="button"
             onClick={() => {
@@ -91,6 +93,14 @@ export default function ExercisesScreen() {
                         setEditing(ex.id);
                         setAdding(false);
                       }}
+                      onDuplicate={() => {
+                        // A copy to rename right away, e.g. "Repeaters 20mm" → "Repeaters 15mm".
+                        const { id: _id, updatedAt: _u, deletedAt: _d, ...rest } = ex;
+                        void [_id, _u, _d];
+                        const copy = addExercise({ ...rest, name: `${ex.name} (copy)` }, `Duplicated ${ex.name}`);
+                        setEditing(copy.id);
+                        setAdding(false);
+                      }}
                       onDelete={() => {
                         if (confirm(`Delete "${ex.name}"?`)) deleteExercise(ex.id);
                       }}
@@ -110,10 +120,12 @@ export default function ExercisesScreen() {
 function Row({
   ex,
   onEdit,
+  onDuplicate,
   onDelete,
 }: {
   ex: Exercise;
   onEdit: () => void;
+  onDuplicate: () => void;
   onDelete: () => void;
 }) {
   return (
@@ -129,6 +141,13 @@ function Row({
         className="text-xs text-sky-600 dark:text-sky-400"
       >
         Edit
+      </button>
+      <button
+        type="button"
+        onClick={onDuplicate}
+        className="text-xs text-sky-600 dark:text-sky-400"
+      >
+        Duplicate
       </button>
       <button
         type="button"

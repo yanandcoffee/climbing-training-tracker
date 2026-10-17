@@ -55,6 +55,7 @@ import { ExerciseMediaThumb } from "./ExerciseMedia";
 import AddExercisePanel from "./AddExercisePanel";
 import PrescriptionEditor from "./PrescriptionEditor";
 import { SignedLoadInput } from "./LoadInput";
+import { UndoInlineButton } from "./UndoButton";
 import ImportNotesDialog from "./ImportNotesDialog";
 import CopyWorkoutDialog from "./CopyWorkoutDialog";
 
@@ -98,7 +99,7 @@ export default function WorkoutDayView({ date }: { date: string }) {
   useEffect(() => {
     if (!workout) return;
     const merged = mergeDuplicateSections({ ...workout, sections: workout.sections ?? [] });
-    if (merged) saveWorkout(merged);
+    if (merged) saveWorkout(merged, false);
   }, [workout, saveWorkout]);
 
   if (!workout) {
@@ -110,41 +111,66 @@ export default function WorkoutDayView({ date }: { date: string }) {
   }
 
   // Always edit the latest stored version, so rapid successive edits never drop each other.
-  const update = (fn: (w: Workout) => Workout) => {
+  const update = (fn: (w: Workout) => Workout, label: string) => {
     const latest = activeWorkouts(useStore.getState()).find((w) => w.date === date) ?? workout;
-    saveWorkout(fn(latest));
+    saveWorkout(fn(latest), label);
   };
+  const nameOf = (id: string) => workout.exercises.find((e) => e.id === id)?.name ?? "exercise";
   const updateItem = (id: string, patch: Partial<WorkoutExercise>) =>
-    update((w) => ({
-      ...w,
-      exercises: w.exercises.map((e) => (e.id === id ? { ...e, ...patch } : e)),
-    }));
+    update(
+      (w) => ({
+        ...w,
+        exercises: w.exercises.map((e) => (e.id === id ? { ...e, ...patch } : e)),
+      }),
+      itemChangeLabel(nameOf(id), patch),
+    );
   const removeItem = (id: string) =>
-    update((w) => ({ ...w, exercises: w.exercises.filter((e) => e.id !== id) }));
+    update((w) => ({ ...w, exercises: w.exercises.filter((e) => e.id !== id) }), `Removed ${nameOf(id)}`);
+  // A copy right below the original: same target, fresh progress.
+  const duplicateItem = (id: string) => {
+    const copyId = uid();
+    update((w) => {
+      const i = w.exercises.findIndex((e) => e.id === id);
+      if (i < 0) return w;
+      const { metrics: _metrics, ...src } = w.exercises[i];
+      void _metrics;
+      const copy: WorkoutExercise = {
+        ...src,
+        id: copyId,
+        prescription: src.prescription ? { ...src.prescription } : undefined,
+        status: "none",
+      };
+      return { ...w, exercises: [...w.exercises.slice(0, i + 1), copy, ...w.exercises.slice(i + 1)] };
+    }, `Duplicated ${nameOf(id)}`);
+    setOpenId(copyId);
+  };
   const addSection = () => {
     const id = uid();
     update((w) => {
       const existing = w.sections ?? [];
       return { ...w, sections: [...existing, { id, title: nextSectionTitle(existing) }] };
-    });
+    }, "Added section");
     setRenamingId(id);
     if (adding) setAdding({ sectionId: id });
   };
   const renameSection = (id: string, title: string) =>
-    update((w) => ({
-      ...w,
-      sections: (w.sections ?? []).map((s) => (s.id === id ? { ...s, title } : s)),
-    }));
+    update(
+      (w) => ({
+        ...w,
+        sections: (w.sections ?? []).map((s) => (s.id === id ? { ...s, title } : s)),
+      }),
+      "Renamed section",
+    );
   const removeSection = (id: string, keepExercises: boolean) => {
-    update((w) => deleteSection({ ...w, sections: w.sections ?? [] }, id, keepExercises));
+    update((w) => deleteSection({ ...w, sections: w.sections ?? [] }, id, keepExercises), "Deleted section");
     if (adding?.sectionId === id) setAdding({});
   };
   const combineSection = (fromId: string, intoId: string) => {
-    update((w) => combineSections({ ...w, sections: w.sections ?? [] }, fromId, intoId));
+    update((w) => combineSections({ ...w, sections: w.sections ?? [] }, fromId, intoId), "Combined sections");
     if (adding?.sectionId === fromId) setAdding({ sectionId: intoId });
   };
   const moveSection = (id: string, index: number) =>
-    update((w) => ({ ...w, sections: moveSectionTo(w.sections ?? [], id, index) }));
+    update((w) => ({ ...w, sections: moveSectionTo(w.sections ?? [], id, index) }), "Moved section");
 
   const sections = workout.sections ?? [];
   const shown = dragItems ?? workout.exercises;
@@ -202,7 +228,7 @@ export default function WorkoutDayView({ date }: { date: string }) {
             ({ sections, id: usedId } = sectionForCategory(sections, item.category));
           }
           return { ...w, sections, exercises: [...exercises, { ...item, sectionId: usedId }] };
-        });
+        }, `Added ${item.name}`);
         // A section chosen on purpose stays the target; otherwise keep sorting by category.
         if (newTitle || item.sectionId) setAdding({ sectionId: usedId });
         setOpenId(item.id);
@@ -214,7 +240,10 @@ export default function WorkoutDayView({ date }: { date: string }) {
   if (empty) {
     return (
       <section className={card}>
-        <h2 className="mb-1 text-base font-semibold">Workout</h2>
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <h2 className="text-base font-semibold">Workout</h2>
+          <UndoInlineButton className="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200" />
+        </div>
         <p className="mb-3 text-sm text-slate-500">Nothing planned for {shortDate(date)} yet.</p>
         {addPanel || (
           <div className="grid gap-2">
@@ -271,6 +300,7 @@ export default function WorkoutDayView({ date }: { date: string }) {
                       onToggleOpen={() => setOpenId((id) => (id === we.id ? null : we.id))}
                       onChange={(patch) => updateItem(we.id, patch)}
                       onRemove={() => removeItem(we.id)}
+                      onDuplicate={() => duplicateItem(we.id)}
                     />
                   ))}
                 </ul>
@@ -340,7 +370,7 @@ export default function WorkoutDayView({ date }: { date: string }) {
         return e ? [{ ...e, sectionId: f.sectionId, group: f.group }] : [];
       });
       return { ...w, exercises: [...ordered, ...w.exercises.filter((e) => !final.some((f) => f.id === e.id))] };
-    });
+    }, `Moved ${from.item.name}`);
   };
   const dragging = activeId ? shown.find((e) => e.id === activeId) : undefined;
 
@@ -353,7 +383,7 @@ export default function WorkoutDayView({ date }: { date: string }) {
           placeholder="Workout"
           onBlur={(e) => {
             const v = e.target.value.trim() || undefined;
-            if (v !== workout.name) update((w) => ({ ...w, name: v }));
+            if (v !== workout.name) update((w) => ({ ...w, name: v }), "Renamed workout");
           }}
           className="min-w-0 flex-1 bg-transparent text-base font-semibold outline-none placeholder:text-slate-900 dark:placeholder:text-slate-100"
           aria-label="Workout name"
@@ -376,7 +406,7 @@ export default function WorkoutDayView({ date }: { date: string }) {
             <ActionBtn
               danger
               onClick={() => {
-                update((w) => ({ ...w, name: undefined, sections: [], exercises: [] }));
+                update((w) => ({ ...w, name: undefined, sections: [], exercises: [] }), "Cleared the day");
                 setConfirmClear(false);
               }}
             >
@@ -387,6 +417,7 @@ export default function WorkoutDayView({ date }: { date: string }) {
         ) : (
           <ActionBtn onClick={() => setConfirmClear(true)}>Clear</ActionBtn>
         )}
+        <UndoInlineButton className="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200" />
       </div>
 
       {addPanel}
@@ -816,6 +847,20 @@ function SectionReorderRow({ section, count }: { section: WorkoutSection; count:
   );
 }
 
+const STATUS_WORD: Record<Exclude<ExerciseStatus, "none">, string> = {
+  complete: "done",
+  partial: "partial",
+  skipped: "skipped",
+};
+
+/** Undo label for an edit to one item, e.g. "Marked Repeaters done". */
+function itemChangeLabel(name: string, patch: Partial<WorkoutExercise>): string {
+  if (patch.status) return patch.status === "none" ? `Unmarked ${name}` : `Marked ${name} ${STATUS_WORD[patch.status]}`;
+  if (patch.metrics) return `Logged ${name}`;
+  if ("notes" in patch) return `Edited ${name} notes`;
+  return `Changed ${name} target`;
+}
+
 const STATUS_META: Record<
   Exclude<ExerciseStatus, "none">,
   { icon: string; label: string; cls: string }
@@ -833,6 +878,7 @@ function ExerciseRow({
   onToggleOpen,
   onChange,
   onRemove,
+  onDuplicate,
 }: {
   we: WorkoutExercise;
   lib?: Exercise;
@@ -841,6 +887,7 @@ function ExerciseRow({
   onToggleOpen: () => void;
   onChange: (patch: Partial<WorkoutExercise>) => void;
   onRemove: () => void;
+  onDuplicate: () => void;
 }) {
   const navigate = useNavigate();
   const summary = prescriptionSummary(we.measureType, we.prescription);
@@ -932,7 +979,10 @@ function ExerciseRow({
                 </p>
                 <MetricsEntry we={we} onMetrics={(m) => onChange({ metrics: { ...we.metrics, ...m } })} />
               </div>
-              <div className="flex items-center justify-end text-xs">
+              <div className="flex items-center justify-between text-xs">
+                <button type="button" onClick={onDuplicate} className="text-sky-600 dark:text-sky-400">
+                  Duplicate
+                </button>
                 <button type="button" onClick={onRemove} className="text-red-600 dark:text-red-400">
                   Remove from workout
                 </button>
