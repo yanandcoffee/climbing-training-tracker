@@ -41,6 +41,10 @@ export function loadLabel(weight: number, unit: WeightUnit = "lb"): string {
   return weight > 0 ? `${fmtNum(weight)} ${unit}` : `−${fmtNum(-weight)} ${unit} assisted`;
 }
 
+/** On/off intervals are always hangs on the body, so no load given means bodyweight. */
+export const targetLoad = (measureType: MeasureType, p: Prescription | undefined): number | undefined =>
+  p?.weight ?? (measureType === "intervals" ? 0 : undefined);
+
 /** One line per set, e.g. "10 reps @ 11.25 lb · 8 reps @ 11.25 lb". */
 export function setsSummary(sets: SetResult[], unit: WeightUnit = "lb"): string {
   return sets
@@ -91,7 +95,8 @@ export function effectiveMetrics(
   const m = flattenMetrics(raw);
   if (status !== "complete" || !p) return m;
   const out: Metrics = { ...m };
-  if (out.weight == null && p.weight != null) out.weight = p.weight;
+  const load = targetLoad(measureType, p);
+  if (out.weight == null && load != null) out.weight = load;
   if (measureType === "reps" && out.reps == null && p.reps != null) out.reps = p.reps;
   if (measureType === "intervals" && out.reps == null && p.reps != null) out.reps = p.reps;
   if (

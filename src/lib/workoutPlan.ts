@@ -9,7 +9,7 @@ import type {
 } from "../types";
 import { CATEGORY_LABELS, CATEGORY_ORDER } from "../types";
 import { uid } from "./id";
-import { hasLogged, loadLabel } from "./history";
+import { hasLogged, loadLabel, targetLoad } from "./history";
 
 /** The content of a workout, independent of its date: what gets imported or copied. */
 export interface WorkoutBody {
@@ -227,7 +227,6 @@ export function prescriptionSummary(measureType: MeasureType, p: Prescription | 
   const pr = p ?? {};
   const sets = pr.sets;
   const setsX = sets ? `${sets} × ` : "";
-  const weight = pr.weight != null ? ` @ ${loadLabel(pr.weight, pr.weightUnit)}` : "";
   let core = "";
   switch (measureType) {
     case "reps":
@@ -262,6 +261,9 @@ export function prescriptionSummary(measureType: MeasureType, p: Prescription | 
       core = "";
       break;
   }
+  // An implied bodyweight (intervals with no load set) only rides along with a target.
+  const load = targetLoad(measureType, p);
+  const weight = load != null && (pr.weight != null || core) ? ` @ ${loadLabel(load, pr.weightUnit)}` : "";
   return `${core}${weight}`.trim();
 }
 

@@ -415,6 +415,16 @@ console.log("\nOn/off intervals and signed loads");
   const doneReps = effectiveMetrics("complete", "intervals", pulley, {});
   assert(doneReps.reps === 6 && doneReps.weight === -15, "…and reps per set for repeaters");
 
+  assert(
+    prescriptionSummary("intervals", { sets: 5, holdSec: 7, restSec: 3 }) === "5 × 7s on / 3s off @ bodyweight",
+    "intervals with no load set read as bodyweight",
+  );
+  assert(prescriptionSummary("hold", { sets: 3, holdSec: 10 }) === "3 × 10s hold", "…other types with no load stay unloaded");
+  assert(prescriptionSummary("intervals", {}) === "", "…but an empty interval target stays blank");
+  const doneBw = effectiveMetrics("complete", "intervals", { sets: 5, holdSec: 7, restSec: 3 }, {});
+  assert(doneBw.weight === 0, "an interval with no load set charts at bodyweight when done");
+  assert(effectiveMetrics("complete", "hold", { holdSec: 10 }, {}).weight === undefined, "…a hold with no load doesn't");
+
   const opts = metricOptions("intervals");
   assert(opts.map((o) => o.key).join(",") === "durationSec,reps,weight,rpe", "interval charts: seconds on, reps per set, load, RPE");
   const loadOpt = opts.find((o) => o.key === "weight")!;

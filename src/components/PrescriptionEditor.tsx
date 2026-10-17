@@ -76,7 +76,13 @@ export default function PrescriptionEditor({
         </p>
       )}
       {t !== "check" && (
-        <LoadPicker id={item.id} weight={p.weight} unit={p.weightUnit ?? "lb"} onChange={setP} />
+        <LoadPicker
+          id={item.id}
+          weight={p.weight}
+          unit={p.weightUnit ?? "lb"}
+          noneIsBodyweight={t === "intervals"}
+          onChange={setP}
+        />
       )}
 
       <label className="flex flex-col text-[11px] text-slate-500">

@@ -27,17 +27,21 @@ export function LoadPicker({
   id,
   weight,
   unit,
+  noneIsBodyweight = false,
   onChange,
 }: {
   id: string;
   weight: number | undefined;
   unit: WeightUnit;
+  /** No "No load" choice: a blank load already means bodyweight (on/off intervals). */
+  noneIsBodyweight?: boolean;
   onChange: (patch: { weight?: number; weightUnit?: WeightUnit }) => void;
 }) {
   // Remembered while the amount is still blank ("Added weight" picked, nothing typed yet).
   const [picked, setPicked] = useState<LoadMode | null>(null);
   const stored = loadModeOf(weight);
-  const mode = stored === "none" && picked ? picked : stored;
+  const mode = stored === "none" ? (picked ?? (noneIsBodyweight ? "bodyweight" : "none")) : stored;
+  const modes = (Object.keys(MODE_LABELS) as LoadMode[]).filter((m) => !(noneIsBodyweight && m === "none"));
   const amount = weight != null && weight !== 0 ? Math.abs(weight) : undefined;
   const sign = mode === "assisted" ? -1 : 1;
 
@@ -57,7 +61,7 @@ export function LoadPicker({
           onChange={(e) => pickMode(e.target.value as LoadMode)}
           className="mt-0.5 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
         >
-          {(Object.keys(MODE_LABELS) as LoadMode[]).map((m) => (
+          {modes.map((m) => (
             <option key={m} value={m}>
               {MODE_LABELS[m]}
             </option>

@@ -429,7 +429,9 @@ console.log("On/off intervals and loads:");
   assert(/5 × 7s on \/ 3s off/.test(host6.textContent), "row shows 5 × 7s on / 3s off");
 
   const loadSelect = field6(/^Load/);
-  assert(loadSelect?.tagName === "SELECT" && loadSelect.value === "none", "load starts as No load");
+  assert(loadSelect?.tagName === "SELECT" && loadSelect.value === "bodyweight", "intervals load starts as Bodyweight");
+  assert(![...loadSelect.options].some((o) => o.value === "none"), "…with no separate No load choice");
+  assert(/5 × 7s on \/ 3s off @ bodyweight/.test(host6.textContent), "…and the row reads @ bodyweight");
   await choose(loadSelect, "bodyweight");
   assert(item6().prescription.weight === 0 && /@ bodyweight/.test(host6.textContent), "Bodyweight stores 0 and reads “@ bodyweight”");
   await choose(field6(/^Load/), "assisted");
