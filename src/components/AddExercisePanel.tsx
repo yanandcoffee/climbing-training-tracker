@@ -7,11 +7,10 @@ import type {
   WorkoutExercise,
   WorkoutSection,
 } from "../types";
-import { CATEGORY_LABELS, CATEGORY_ORDER, MEASURE_LABELS } from "../types";
+import { CATEGORY_LABELS, CATEGORY_ORDER, MEASURE_LABELS, MEASURE_ORDER } from "../types";
 import { shortDate } from "../lib/dates";
 import { itemFromExercise, lastUseOf, nextSectionTitle, prescriptionSummary } from "../lib/workoutPlan";
 
-const MEASURES: MeasureType[] = ["reps", "hold", "reps_in_time", "duration", "check"];
 const BY_CATEGORY = "";
 const NEW_SECTION = "__new__";
 
@@ -235,7 +234,7 @@ function NewExerciseForm({
           onChange={(e) => setMeasureType(e.target.value as MeasureType)}
           className={inputCls}
         >
-          {MEASURES.map((m) => (
+          {MEASURE_ORDER.map((m) => (
             <option key={m} value={m}>
               {MEASURE_LABELS[m]}
             </option>

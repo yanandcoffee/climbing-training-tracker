@@ -394,5 +394,68 @@ console.log("Section menu:");
   assert(day5().sections.length === 0 && day5().exercises.length === 0, "deleting with its exercises removes them all");
   await act(async () => root5.unmount());
 }
+console.log("On/off intervals and loads:");
+{
+  const DAY6 = "2026-10-26";
+  const rep = st.addExercise({ name: "Repeaters", category: "strength_conditioning", measureType: "intervals" });
+  st.applyWorkoutToDates(
+    {
+      sections: [],
+      exercises: [{ id: "r", exerciseId: rep.id, name: "Repeaters", category: "strength_conditioning", measureType: "intervals", status: "none" }],
+    },
+    [DAY6],
+    "replace",
+  );
+  const host6 = document.createElement("div");
+  document.body.appendChild(host6);
+  const root6 = createRoot(host6);
+  await act(async () =>
+    root6.render(React.createElement(MemoryRouter, null, React.createElement(WorkoutDayView, { date: DAY6 }))),
+  );
+  const item6 = () => activeWorkouts(useStore.getState()).find((w) => w.date === DAY6).exercises[0];
+  const b6 = (re) => [...host6.querySelectorAll("button")].find((b) => re.test(b.textContent));
+  const field6 = (re) => [...host6.querySelectorAll("label")].find((l) => re.test(l.textContent))?.querySelector("input, select");
+  const choose = (select, value) =>
+    act(async () => {
+      select.value = value;
+      select.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+    });
+
+  await click(b6(/^Repeaters/));
+  assert(!!field6(/^On \(sec\)/) && !!field6(/^Off \(sec\)/) && !!field6(/^Reps per set/), "intervals ask for on, off and reps per set");
+  await blurWith(field6(/^Sets/), "5");
+  await blurWith(field6(/^On \(sec\)/), "7");
+  await blurWith(field6(/^Off \(sec\)/), "3");
+  assert(/5 × 7s on \/ 3s off/.test(host6.textContent), "row shows 5 × 7s on / 3s off");
+
+  const loadSelect = field6(/^Load/);
+  assert(loadSelect?.tagName === "SELECT" && loadSelect.value === "none", "load starts as No load");
+  await choose(loadSelect, "bodyweight");
+  assert(item6().prescription.weight === 0 && /@ bodyweight/.test(host6.textContent), "Bodyweight stores 0 and reads “@ bodyweight”");
+  await choose(field6(/^Load/), "assisted");
+  assert(item6().prescription.weight === undefined && !!field6(/^Taken off/), "Assisted asks how much is taken off");
+  await blurWith(field6(/^Taken off/), "15");
+  assert(item6().prescription.weight === -15, "15 taken off is stored as −15");
+  assert(/@ −15 lb assisted/.test(host6.textContent), "row reads “@ −15 lb assisted”");
+  await choose(field6(/^Load/), "added");
+  assert(item6().prescription.weight === 15, "switching to Added weight keeps the amount, now added");
+  await choose(field6(/^Load/), "assisted");
+
+  const loadIn = () => host6.querySelector('input[aria-label="Load lb"]');
+  const signBtn = () => loadIn().previousElementSibling;
+  assert([...host6.querySelectorAll("label")].some((l) => l.textContent.startsWith("Seconds on")), "each set logs seconds on");
+  assert(signBtn().textContent === "−", "a set's load starts as assisted when the target is assisted");
+  await blurWith(loadIn(), "12");
+  assert(item6().metrics.sets[0].weight === -12, "typing 12 logs −12");
+  await click(signBtn());
+  assert(item6().metrics.sets[0].weight === 12 && signBtn().textContent === "+", "the +/− button flips it to added");
+  await blurWith(loadIn(), "0");
+  assert(item6().metrics.sets[0].weight === 0, "0 logs bodyweight");
+
+  await blurWith(field6(/^Reps per set/), "6");
+  assert(/5 sets × 6 reps · 7s on \/ 3s off/.test(host6.textContent), "with reps per set the row reads 5 sets × 6 reps · 7s on / 3s off");
+  assert([...host6.querySelectorAll("label")].some((l) => /^Reps$/.test(l.firstChild?.textContent ?? "")), "…and each set logs reps instead of seconds");
+  await act(async () => root6.unmount());
+}
 console.log(failures === 0 ? "\nDAY VIEW OK ✅" : `\n${failures} FAILURES ❌`);
 process.exit(failures ? 1 : 0);

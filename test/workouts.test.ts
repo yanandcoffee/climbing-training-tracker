@@ -22,7 +22,7 @@ import {
   prescriptionSummary,
   type WorkoutBody,
 } from "../src/lib/workoutPlan";
-import { exerciseHistory, hasLogged, metricOptions, setsSummary } from "../src/lib/history";
+import { effectiveMetrics, exerciseHistory, hasLogged, loadLabel, metricOptions, setsSummary } from "../src/lib/history";
 import type { Exercise, Workout } from "../src/types";
 
 let failures = 0;
@@ -373,6 +373,63 @@ console.log("Moving and deleting sections:");
   assert(combineSections(body, "A", "A") === body && combineSections(body, "A", "zzz") === body, "combining with itself or a missing section does nothing");
   const only = deleteSection({ sections: [body.sections[0]], exercises: [ex("a1", "A")] }, "A", true);
   assert(only.sections.length === 0 && only.exercises[0].sectionId === undefined, "the only section's exercises are left without a section");
+}
+
+console.log("\nOn/off intervals and signed loads");
+{
+  const parsed = sanitizePlan({
+    workoutName: "Hangboard",
+    sections: [
+      {
+        title: "Fingers",
+        notes: [],
+        items: [
+          { name: "Repeaters", category: "strength_conditioning", measureType: "intervals", sets: 5, holdSec: 7, restSec: 3, weight: 0, weightUnit: "lb" },
+          { name: "Pulley hang", category: "strength_conditioning", measureType: "intervals", sets: 3, reps: 6, holdSec: 7, restSec: 3, weight: -15, weightUnit: "lb" },
+          { name: "Weighted hang", category: "strength_conditioning", measureType: "hold", sets: 3, holdSec: 10, weight: 10, weightUnit: "kg" },
+        ],
+      },
+    ],
+  });
+  const [rep, pulley, weighted] = parsed.sections[0].items;
+  assert(rep.measureType === "intervals" && rep.holdSec === 7 && rep.restSec === 3, "the parser keeps on/off intervals and their off time");
+  assert(rep.weight === 0 && pulley.weight === -15, "…and bodyweight (0) and assisted (negative) loads");
+  assert(prescriptionSummary("intervals", rep) === "5 × 7s on / 3s off @ bodyweight", "intervals summarized: 5 × 7s on / 3s off @ bodyweight");
+  assert(
+    prescriptionSummary("intervals", pulley) === "3 sets × 6 reps · 7s on / 3s off @ −15 lb assisted",
+    "repeaters with reps per set and an assisted load summarized",
+  );
+  assert(prescriptionSummary("hold", weighted) === "3 × 10s hold @ 10 kg", "added weight reads as before");
+  assert(loadLabel(0) === "bodyweight" && loadLabel(-2.5, "kg") === "−2.5 kg assisted" && loadLabel(5) === "5 lb", "load labels");
+
+  const b = planToBody(parsed, {
+    mapping: defaultMapping(parsed, []),
+    removed: new Set(),
+    library: [],
+    createExercise: (d) => lib(d.name, d),
+  });
+  assert(b.exercises[0].prescription?.restSec === 3 && b.exercises[1].prescription?.weight === -15, "off time and assisted load carried onto the workout");
+
+  const done = effectiveMetrics("complete", "intervals", rep, {});
+  assert(done.durationSec === 7 && done.weight === 0, "an interval marked done counts the on time and load");
+  const doneReps = effectiveMetrics("complete", "intervals", pulley, {});
+  assert(doneReps.reps === 6 && doneReps.weight === -15, "…and reps per set for repeaters");
+
+  const opts = metricOptions("intervals");
+  assert(opts.map((o) => o.key).join(",") === "durationSec,reps,weight,rpe", "interval charts: seconds on, reps per set, load, RPE");
+  const loadOpt = opts.find((o) => o.key === "weight")!;
+  assert(loadOpt.label === "Load" && loadOpt.format?.(-15) === "−15 lb assisted", "load chart labels assisted values");
+  const best = effectiveMetrics("none", "intervals", undefined, { sets: [{ weight: -20 }, { weight: -10 }] });
+  assert(best.weight === -10, "best set is the one with the least assistance");
+  const volume = metricOptions("reps").find((o) => o.key === "volume")!;
+  assert(
+    volume.value({ sets: [{ reps: 5, weight: 10 }, { reps: 5, weight: 0 }, { reps: 5, weight: -15 }] }) === 50,
+    "volume counts added weight only",
+  );
+  assert(
+    setsSummary([{ reps: 5, weight: 0 }, { durationSec: 7, weight: -15 }]) === "5 reps @ bodyweight · 7s @ −15 lb assisted",
+    "logged sets show bodyweight and assisted loads",
+  );
 }
 
 console.log(failures === 0 ? "\nWORKOUTS OK ✅" : `\n${failures} FAILURES ❌`);

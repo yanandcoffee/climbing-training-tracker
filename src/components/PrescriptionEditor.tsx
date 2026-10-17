@@ -1,14 +1,13 @@
-import type { MeasureType, Prescription, WeightUnit, WorkoutExercise } from "../types";
-import { MEASURE_LABELS } from "../types";
-
-const MEASURES: MeasureType[] = ["reps", "hold", "reps_in_time", "duration", "check"];
+import type { MeasureType, Prescription, WorkoutExercise } from "../types";
+import { MEASURE_LABELS, MEASURE_ORDER } from "../types";
+import { LoadPicker } from "./LoadInput";
 
 const inputCls =
   "mt-0.5 w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100";
 
 const num = (v: string): number | undefined => (v.trim() === "" ? undefined : Number(v));
 
-/** Edits this workout's target for one exercise (sets/reps/time/weight). */
+/** Edits this workout's target for one exercise (sets/reps/time/load). */
 export default function PrescriptionEditor({
   item,
   onChange,
@@ -40,7 +39,6 @@ export default function PrescriptionEditor({
     </label>
   );
 
-  const unit: WeightUnit = p.weightUnit ?? "lb";
   const t = item.measureType;
 
   return (
@@ -52,7 +50,7 @@ export default function PrescriptionEditor({
           onChange={(e) => onChange({ measureType: e.target.value as MeasureType })}
           className="mt-0.5 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
         >
-          {MEASURES.map((m) => (
+          {MEASURE_ORDER.map((m) => (
             <option key={m} value={m}>
               {MEASURE_LABELS[m]}
             </option>
@@ -66,30 +64,19 @@ export default function PrescriptionEditor({
           {t === "reps" && field("Reps", "reps")}
           {t === "reps_in_time" && field("Window (sec)", "windowSec")}
           {t === "hold" && field("Hold (sec)", "holdSec")}
+          {t === "intervals" && field("On (sec)", "holdSec")}
+          {t === "intervals" && field("Off (sec)", "restSec")}
+          {t === "intervals" && field("Reps per set", "reps")}
           {t === "duration" && field("Duration (sec)", "holdSec")}
-          {t !== "reps_in_time" && (
-            <div className="flex items-end gap-1">
-              {field(`Weight`, "weight", "0.25")}
-              <div className="flex overflow-hidden rounded-lg border border-slate-200 text-xs dark:border-slate-700">
-                {(["lb", "kg"] as const).map((u) => (
-                  <button
-                    key={u}
-                    type="button"
-                    onClick={() => setP({ weightUnit: u })}
-                    aria-pressed={unit === u}
-                    className={`px-2 py-1.5 ${
-                      unit === u
-                        ? "bg-sky-600 text-white"
-                        : "bg-white text-slate-600 dark:bg-slate-900 dark:text-slate-300"
-                    }`}
-                  >
-                    {u}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
+      )}
+      {t === "intervals" && (
+        <p className="text-[11px] text-slate-400">
+          e.g. 7 on / 3 off for 5 sets. Leave reps per set blank unless each set repeats the on/off (repeaters).
+        </p>
+      )}
+      {t !== "check" && (
+        <LoadPicker id={item.id} weight={p.weight} unit={p.weightUnit ?? "lb"} onChange={setP} />
       )}
 
       <label className="flex flex-col text-[11px] text-slate-500">

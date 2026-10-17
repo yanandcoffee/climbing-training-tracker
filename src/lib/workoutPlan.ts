@@ -9,7 +9,7 @@ import type {
 } from "../types";
 import { CATEGORY_LABELS, CATEGORY_ORDER } from "../types";
 import { uid } from "./id";
-import { hasLogged } from "./history";
+import { hasLogged, loadLabel } from "./history";
 
 /** The content of a workout, independent of its date: what gets imported or copied. */
 export interface WorkoutBody {
@@ -82,7 +82,7 @@ export const defaultMergeMode = (existing: Pick<Workout, "exercises">[]): MergeM
   existing.some((w) => w.exercises.some(hasProgress)) ? "append" : "replace";
 
 const hasTarget = (p: Prescription | undefined) =>
-  !!p && [p.sets, p.reps, p.windowSec, p.holdSec, p.weight].some((v) => v != null);
+  !!p && [p.sets, p.reps, p.windowSec, p.holdSec, p.restSec, p.weight].some((v) => v != null);
 
 /**
  * Put `body` onto an existing workout.
@@ -219,14 +219,15 @@ export function itemFromExercise(
   };
 }
 
-const fmtNum = (n: number) => (Number.isInteger(n) ? String(n) : String(+n.toFixed(2)));
-
-/** Human summary of a prescription, e.g. "2 × 10", "3 × 10s hold @ 11.25 lb". */
+/**
+ * Human summary of a prescription, e.g. "2 × 10", "3 × 10s hold @ 11.25 lb",
+ * "5 × 7s on / 3s off @ bodyweight".
+ */
 export function prescriptionSummary(measureType: MeasureType, p: Prescription | undefined): string {
   const pr = p ?? {};
   const sets = pr.sets;
   const setsX = sets ? `${sets} × ` : "";
-  const weight = pr.weight != null ? ` @ ${fmtNum(pr.weight)} ${pr.weightUnit ?? "lb"}` : "";
+  const weight = pr.weight != null ? ` @ ${loadLabel(pr.weight, pr.weightUnit)}` : "";
   let core = "";
   switch (measureType) {
     case "reps":
@@ -238,6 +239,18 @@ export function prescriptionSummary(measureType: MeasureType, p: Prescription | 
     case "hold":
       core = pr.holdSec ? `${setsX}${pr.holdSec}s hold` : sets ? `${sets} sets` : "";
       break;
+    case "intervals": {
+      const onOff =
+        pr.holdSec != null || pr.restSec != null ? `${pr.holdSec ?? "?"}s on / ${pr.restSec ?? "?"}s off` : "";
+      core = pr.reps
+        ? `${sets ? `${sets} sets × ` : ""}${pr.reps} reps${onOff ? ` · ${onOff}` : ""}`
+        : onOff
+          ? `${setsX}${onOff}`
+          : sets
+            ? `${sets} sets`
+            : "";
+      break;
+    }
     case "duration":
       core = pr.holdSec
         ? pr.holdSec >= 60 && pr.holdSec % 60 === 0

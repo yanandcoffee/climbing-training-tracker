@@ -54,6 +54,7 @@ import { loggedSets } from "../lib/history";
 import { ExerciseMediaThumb } from "./ExerciseMedia";
 import AddExercisePanel from "./AddExercisePanel";
 import PrescriptionEditor from "./PrescriptionEditor";
+import { SignedLoadInput } from "./LoadInput";
 import ImportNotesDialog from "./ImportNotesDialog";
 import CopyWorkoutDialog from "./CopyWorkoutDialog";
 
@@ -954,9 +955,12 @@ function MetricsEntry({ we, onMetrics }: { we: WorkoutExercise; onMetrics: (m: M
   const logged = loggedSets(m);
   // Always show at least one (blank) row so a single result is still one step.
   const rows: SetResult[] = logged.length ? logged : [{}];
-  const showReps = we.measureType === "reps" || we.measureType === "reps_in_time";
-  const showSeconds = we.measureType === "hold" || we.measureType === "duration";
-  const showWeight = we.measureType === "reps" || showSeconds;
+  const t = we.measureType;
+  // Intervals log reps (on/off cycles done) when the target has reps per set, else seconds on.
+  const intervalReps = t === "intervals" && p?.reps != null;
+  const showReps = t === "reps" || t === "reps_in_time" || intervalReps;
+  const showSeconds = t === "hold" || t === "duration" || (t === "intervals" && !intervalReps);
+  const showWeight = t !== "check";
   const hasSetFields = showReps || showSeconds;
 
   // Writing sets replaces any older single-result fields so nothing is counted twice.
@@ -1011,9 +1015,17 @@ function MetricsEntry({ we, onMetrics }: { we: WorkoutExercise; onMetrics: (m: M
           {rows.map((_, i) => (
             <div key={i} className="flex flex-wrap items-end gap-3">
               <span className="w-10 pb-1.5 text-xs font-medium text-slate-500">Set {i + 1}</span>
-              {showReps && setInput(i, we.measureType === "reps_in_time" ? `Reps / ${p?.windowSec ?? 10}s` : "Reps", "reps")}
-              {showSeconds && setInput(i, "Seconds", "durationSec")}
-              {showWeight && setInput(i, `Weight ${unit}`, "weight")}
+              {showReps && setInput(i, t === "reps_in_time" ? `Reps / ${p?.windowSec ?? 10}s` : "Reps", "reps")}
+              {showSeconds && setInput(i, t === "intervals" ? "Seconds on" : "Seconds", "durationSec")}
+              {showWeight && (
+                <SignedLoadInput
+                  id={`${we.id}-s${i}-weight`}
+                  label={`Load ${unit}`}
+                  value={rows[i].weight}
+                  defaultAssisted={(p?.weight ?? 0) < 0}
+                  onChange={(v) => setField(i, "weight", v)}
+                />
+              )}
               {logged.length > 0 && (
                 <button
                   type="button"

@@ -23,10 +23,13 @@ export default function TrendChart({
   data,
   label,
   unit,
+  format,
 }: {
   data: TrendPoint[];
   label: string;
   unit?: string;
+  /** Tooltip text for a value; defaults to "value unit". */
+  format?: (v: number) => string;
 }) {
   const dark = useDarkMode();
   // Sky accent: #0284c7 on light, #38bdf8 on dark — both clear the contrast
@@ -53,9 +56,11 @@ export default function TrendChart({
             axisLine={false}
             width={44}
             allowDecimals={false}
+            // From 0 as before, but reach below it for assisted (negative) loads.
+            domain={[(min: number) => Math.min(0, min), "auto"]}
           />
           <Tooltip
-            content={<ChartTooltip unit={unit} />}
+            content={<ChartTooltip unit={unit} format={format} />}
             cursor={{ stroke: axis, strokeDasharray: "3 3" }}
           />
           <Line
@@ -78,17 +83,17 @@ interface TooltipInjectedProps {
   label?: string | number;
   payload?: Array<{ value?: number; payload?: { date?: string } }>;
   unit?: string;
+  format?: (v: number) => string;
 }
 
-function ChartTooltip({ active, payload, label: xLabel, unit }: TooltipInjectedProps) {
+function ChartTooltip({ active, payload, label: xLabel, unit, format }: TooltipInjectedProps) {
   if (!active || !payload?.length) return null;
   const p = payload[0];
   return (
     <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs shadow-md dark:border-slate-700 dark:bg-slate-900">
       <div className="font-medium text-slate-500">{p.payload?.date ?? xLabel}</div>
       <div className="font-semibold tabular-nums">
-        {p.value}
-        {unit ? ` ${unit}` : ""}
+        {format && p.value != null ? format(p.value) : `${p.value}${unit ? ` ${unit}` : ""}`}
       </div>
     </div>
   );

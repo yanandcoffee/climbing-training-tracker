@@ -33,6 +33,14 @@ export function hasLogged(m: Metrics | undefined): boolean {
   return !!m && (loggedSets(m).length > 0 || m.rpe != null);
 }
 
+const fmtNum = (n: number) => (Number.isInteger(n) ? String(n) : String(+n.toFixed(2)));
+
+/** A signed load in words: "11.25 lb", "bodyweight", "−15 lb assisted". */
+export function loadLabel(weight: number, unit: WeightUnit = "lb"): string {
+  if (weight === 0) return "bodyweight";
+  return weight > 0 ? `${fmtNum(weight)} ${unit}` : `−${fmtNum(-weight)} ${unit} assisted`;
+}
+
 /** One line per set, e.g. "10 reps @ 11.25 lb · 8 reps @ 11.25 lb". */
 export function setsSummary(sets: SetResult[], unit: WeightUnit = "lb"): string {
   return sets
@@ -40,7 +48,7 @@ export function setsSummary(sets: SetResult[], unit: WeightUnit = "lb"): string 
       [
         s.reps != null && `${s.reps} reps`,
         s.durationSec != null && `${s.durationSec}s`,
-        s.weight != null && `${s.weight} ${unit}`,
+        s.weight != null && loadLabel(s.weight, unit),
       ]
         .filter(Boolean)
         .join(" @ "),
@@ -50,7 +58,8 @@ export function setsSummary(sets: SetResult[], unit: WeightUnit = "lb"): string 
 
 /**
  * Collapse per-set results to one value each for charting: the best set
- * (highest reps / weight / seconds). Volume is summed over the sets instead.
+ * (highest reps / load / seconds; for an assisted load the least assistance).
+ * Volume is summed over the sets instead.
  */
 export function flattenMetrics(m: Metrics): Metrics {
   const sets = loggedSets(m);
@@ -84,7 +93,12 @@ export function effectiveMetrics(
   const out: Metrics = { ...m };
   if (out.weight == null && p.weight != null) out.weight = p.weight;
   if (measureType === "reps" && out.reps == null && p.reps != null) out.reps = p.reps;
-  if ((measureType === "hold" || measureType === "duration") && out.durationSec == null && p.holdSec != null)
+  if (measureType === "intervals" && out.reps == null && p.reps != null) out.reps = p.reps;
+  if (
+    (measureType === "hold" || measureType === "duration" || measureType === "intervals") &&
+    out.durationSec == null &&
+    p.holdSec != null
+  )
     out.durationSec = p.holdSec;
   return out;
 }
@@ -115,23 +129,37 @@ export interface MetricOption {
   label: string;
   unit?: string;
   value: (m: Metrics) => number | undefined;
+  /** How to show one value, when "value unit" isn't right. */
+  format?: (v: number) => string;
 }
 
 export function metricOptions(measureType: MeasureType, weightUnit: WeightUnit = "lb"): MetricOption[] {
   const rpe: MetricOption = { key: "rpe", label: "RPE", value: (m) => m.rpe };
+  // Signed: above 0 added weight, 0 bodyweight, below 0 assisted.
+  const load: MetricOption = {
+    key: "weight",
+    label: "Load",
+    unit: weightUnit,
+    value: (m) => m.weight,
+    format: (v) => loadLabel(v, weightUnit),
+  };
   switch (measureType) {
     case "reps":
       return [
         { key: "reps", label: "Reps", value: (m) => m.reps },
-        { key: "weight", label: "Weight", unit: weightUnit, value: (m) => m.weight },
+        load,
         {
           key: "volume",
           label: "Volume",
           unit: `${weightUnit}·reps`,
           value: (m) => {
             const sets = m.sets?.length ? m.sets : [{ reps: m.reps, weight: m.weight }];
+            // Added weight only: bodyweight and assisted sets have no load to multiply.
             const parts = sets
-              .map((s) => (s.reps != null && (s.weight ?? m.weight) != null ? s.reps * (s.weight ?? m.weight)! : undefined))
+              .map((s) => {
+                const w = s.weight ?? m.weight;
+                return s.reps != null && w != null && w > 0 ? s.reps * w : undefined;
+              })
               .filter((n): n is number => n != null);
             return parts.length ? parts.reduce((a, b) => a + b, 0) : undefined;
           },
@@ -139,12 +167,15 @@ export function metricOptions(measureType: MeasureType, weightUnit: WeightUnit =
         rpe,
       ];
     case "reps_in_time":
-      return [{ key: "reps", label: "Reps achieved", value: (m) => m.reps }, rpe];
+      return [{ key: "reps", label: "Reps achieved", value: (m) => m.reps }, load, rpe];
     case "hold":
     case "duration":
+      return [{ key: "durationSec", label: "Seconds", unit: "s", value: (m) => m.durationSec }, load, rpe];
+    case "intervals":
       return [
-        { key: "durationSec", label: "Seconds", unit: "s", value: (m) => m.durationSec },
-        { key: "weight", label: "Weight", unit: weightUnit, value: (m) => m.weight },
+        { key: "durationSec", label: "Seconds on", unit: "s", value: (m) => m.durationSec },
+        { key: "reps", label: "Reps per set", value: (m) => m.reps },
+        load,
         rpe,
       ];
     case "check":

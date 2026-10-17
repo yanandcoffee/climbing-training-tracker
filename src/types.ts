@@ -27,9 +27,13 @@ export type ExerciseCategory =
 
 /**
  * How a workout item is prescribed/logged. "check" = no numeric target, just
- * do it (e.g. a warm-up stretch).
+ * do it (e.g. a warm-up stretch). "intervals" = work/rest repeats, e.g. 7s on /
+ * 3s off (holdSec on, restSec off, optional reps per set for repeaters).
  */
-export type MeasureType = "reps" | "reps_in_time" | "hold" | "duration" | "check";
+export type MeasureType = "reps" | "reps_in_time" | "hold" | "intervals" | "duration" | "check";
+
+/** Order the measure types are offered in pickers. */
+export const MEASURE_ORDER: MeasureType[] = ["reps", "hold", "intervals", "reps_in_time", "duration", "check"];
 
 /**
  * A building block. Holds no sets/reps — those belong to each workout it's
@@ -52,7 +56,12 @@ export interface Prescription {
   sets?: number;
   reps?: number;
   windowSec?: number; // reps_in_time window
-  holdSec?: number; // hold/duration target
+  holdSec?: number; // hold/duration target; "on" time for intervals
+  restSec?: number; // "off" time for intervals
+  /**
+   * Load: > 0 added weight, 0 bodyweight, < 0 assisted (harness + pulley
+   * counterweight). undefined = no load given.
+   */
   weight?: number;
   weightUnit?: WeightUnit;
 }
@@ -62,7 +71,7 @@ export type WeightUnit = "lb" | "kg";
 /** What was done in one set. */
 export interface SetResult {
   reps?: number;
-  weight?: number;
+  weight?: number; // signed load, as Prescription.weight
   durationSec?: number; // seconds held / done
 }
 
@@ -179,6 +188,7 @@ export const MEASURE_LABELS: Record<MeasureType, string> = {
   reps: "Reps / sets",
   reps_in_time: "Max reps in time window",
   hold: "Timed hold",
+  intervals: "On / off intervals",
   duration: "Timed activity",
   check: "Climbing drill",
 };

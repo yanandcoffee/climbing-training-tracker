@@ -93,6 +93,7 @@ export default function ExerciseDetailScreen() {
             data={chartData}
             unit={option?.unit}
             label={option?.label ?? ""}
+            format={option?.format}
           />
         ) : (
           <p className="py-8 text-center text-sm text-slate-400">

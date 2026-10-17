@@ -75,6 +75,7 @@ export function planToBody(
           reps: it.reps,
           windowSec: it.windowSec,
           holdSec: it.holdSec,
+          restSec: it.restSec,
           weight: it.weight,
           weightUnit: it.weightUnit,
         },

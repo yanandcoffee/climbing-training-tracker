@@ -1,8 +1,7 @@
 import { useState } from "react";
 import type { Exercise, ExerciseCategory, MeasureType } from "../types";
-import { CATEGORY_LABELS, CATEGORY_ORDER, MEASURE_LABELS } from "../types";
+import { CATEGORY_LABELS, CATEGORY_ORDER, MEASURE_LABELS, MEASURE_ORDER } from "../types";
 
-const MEASURES: MeasureType[] = ["reps", "hold", "reps_in_time", "duration", "check"];
 
 export type ExerciseDraft = Omit<Exercise, "id" | "updatedAt" | "deletedAt">;
 
@@ -65,7 +64,7 @@ export default function ExerciseForm({
           onChange={(e) => setMeasureType(e.target.value as MeasureType)}
           className={input}
         >
-          {MEASURES.map((m) => (
+          {MEASURE_ORDER.map((m) => (
             <option key={m} value={m}>
               {MEASURE_LABELS[m]}
             </option>
@@ -74,7 +73,7 @@ export default function ExerciseForm({
       </div>
 
       <p className="text-[11px] text-slate-400">
-        Sets, reps and weight are set per workout, so the same exercise can progress week to week.
+        Sets, reps and load are set per workout, so the same exercise can progress week to week.
         The measure type is just the default when you add it to a workout.
       </p>
 

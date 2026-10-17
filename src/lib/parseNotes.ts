@@ -12,7 +12,8 @@ export interface ParsedItem {
   reps?: number;
   windowSec?: number;
   holdSec?: number;
-  weight?: number;
+  restSec?: number;
+  weight?: number; // > 0 added, 0 bodyweight, < 0 assisted
   weightUnit?: WeightUnit;
   notes?: string;
 }
@@ -36,7 +37,7 @@ const CATEGORIES: ExerciseCategory[] = [
   "core",
   "mobility",
 ];
-const MEASURES: MeasureType[] = ["reps", "reps_in_time", "hold", "duration", "check"];
+const MEASURES: MeasureType[] = ["reps", "reps_in_time", "hold", "intervals", "duration", "check"];
 const UNITS: WeightUnit[] = ["lb", "kg"];
 
 const ITEM_SCHEMA = {
@@ -52,6 +53,7 @@ const ITEM_SCHEMA = {
     reps: { type: "number" },
     windowSec: { type: "number" },
     holdSec: { type: "number" },
+    restSec: { type: "number" },
     weight: { type: "number" },
     weightUnit: { type: "string", enum: UNITS },
     notes: { type: "string" },
@@ -97,7 +99,8 @@ const JSON_SHAPE_HINT = {
           reps: "number (optional)",
           windowSec: "number (optional)",
           holdSec: "number (optional)",
-          weight: "number (optional)",
+          restSec: "number (optional)",
+          weight: "number (optional; negative = assisted, 0 = bodyweight)",
           weightUnit: "lb | kg (optional)",
           notes: "string (optional)",
         },
@@ -121,10 +124,11 @@ Each exercise ("item"):
 - measureType + numbers:
   - reps: sets x reps ("2 set of 10" → sets 2, reps 10)
   - hold: timed hold ("3 set 10 sec" → sets 3, holdSec 10)
+  - intervals: work/rest repeats, e.g. repeaters ("7s on 3s off x5" or "7/3 for 5 sets" → sets 5, holdSec 7, restSec 3; "3 sets of 6 reps 7 on 3 off" → sets 3, reps 6, holdSec 7, restSec 3)
   - reps_in_time: max reps in a time window (windowSec, sets)
   - duration: a timed activity (holdSec = total seconds)
   - check: no sets/reps/time given — just do it
-- weight + weightUnit when a load is given ("11.25lbs" → weight 11.25, weightUnit "lb").
+- weight + weightUnit when a load is given. Positive = added weight ("11.25lbs", "+10 lb" → weight 11.25 / 10). 0 = bodyweight ("BW", "bodyweight", "no added weight"). Negative = assisted, e.g. with a harness and pulley or counterweight ("-15 lb", "15 lb assisted", "pulley 15lb off" → weight -15).
 - notes: any per-exercise detail that doesn't fit the fields (e.g. "full crimp").
 
 Only include fields you can infer. workoutName: a short descriptive name for the session.`;
@@ -352,6 +356,7 @@ export function sanitizePlan(raw: unknown): ParsedPlan {
             reps: numOrUndef(e.reps),
             windowSec: numOrUndef(e.windowSec),
             holdSec: numOrUndef(e.holdSec),
+            restSec: numOrUndef(e.restSec),
             weight,
             weightUnit:
               weight == null
