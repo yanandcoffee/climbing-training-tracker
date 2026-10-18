@@ -139,7 +139,8 @@ assert(/1\/2 done/.test(host.textContent), "header shows 1/2 done");
 console.log("Copying onto a day with progress:");
 {
   const radio = (re) => buttons().find((b) => b.getAttribute("role") === "radio" && re.test(b.textContent));
-  await click(btn(/Copy from…/));
+  await click(buttons().find((b) => b.getAttribute("aria-label") === "More actions"));
+  await click(btn(/Copy in a previous workout/));
   assert(radio(/Add to it/)?.getAttribute("aria-checked") === "true", "a day with something done defaults to Add to it");
   await click(radio(/Replace it/));
   assert(/Replacing erases what you've done on 12 Oct \(1 exercise marked or logged\)/.test(host.textContent), "choosing Replace warns what it erases");
@@ -544,6 +545,107 @@ console.log("Undo, duplicate and change all types:");
   const inline = [...host7.querySelectorAll("header button")].find((b) => b.textContent === "↶ Undo");
   assert(inline?.disabled && inline.getAttribute("aria-label") === "Nothing to undo", "…greyed out when there's nothing left to undo");
   await act(async () => root7.unmount());
+}
+
+console.log("Move to another day:");
+{
+  const UndoButton = (await jiti.import("../src/components/UndoButton")).default;
+  const FROM = "2026-11-03"; // a Tuesday
+  const on = (d) => activeWorkouts(useStore.getState()).find((w) => w.date === d);
+  st.applyWorkoutToDates(
+    { name: "Power", sections: [], exercises: [{ id: "c", name: "Campus", category: "strength_conditioning", measureType: "reps", status: "none" }] },
+    [FROM],
+    "replace",
+  );
+  st.applyWorkoutToDates(
+    { name: "Endurance", sections: [], exercises: [{ id: "t", name: "Traverse", category: "on_wall_drills", measureType: "duration", status: "none" }] },
+    ["2026-11-10"],
+    "replace",
+  );
+  const host8 = document.createElement("div");
+  document.body.appendChild(host8);
+  const root8 = createRoot(host8);
+  const h = React.createElement;
+  await act(async () => root8.render(h(MemoryRouter, null, h(WorkoutDayView, { date: FROM }), h(UndoButton))));
+  const b8 = (re) => [...host8.querySelectorAll("button")].find((b) => re.test(b.textContent));
+
+  const menu8 = () => click(host8.querySelector('button[aria-label="More actions"]'));
+  await menu8();
+  await click(b8(/Move to another day/));
+  const sheet = () => host8.querySelector('[role="dialog"][aria-label="Move workout"]');
+  assert(!!sheet() && /Power · Tue 3 Nov/.test(sheet().textContent), "Move to… opens a calendar sheet for this workout");
+  assert(b8(/^Pick a day$/)?.disabled, "nothing is moved until a day is picked");
+  assert(sheet().querySelector('button[aria-label="Tuesday 3 November"]').disabled, "its own day can't be picked");
+  await click(b8(/^Tomorrow$/));
+  assert(!!b8(/^Move to Wed 4 Nov$/), "Tomorrow picks the next day");
+  await click(sheet().querySelector('button[aria-label="Thursday 5 November"]'));
+  await click(b8(/^Move to Thu 5 Nov$/));
+  assert(!sheet() && on("2026-11-05")?.name === "Power" && on(FROM).exercises.length === 0, "tapping a day and Move moves it there");
+  assert(/Moved workout to 5 Nov/.test(host8.textContent), "…and says so, with Undo");
+  await click(host8.querySelector('button[aria-label^="Undo Moved"]'));
+  assert(on(FROM).name === "Power" && on("2026-11-05").exercises.length === 0, "Undo brings it back");
+
+  await menu8();
+  await click(b8(/Move to another day/));
+  await click(b8(/^Next Tue$/));
+  assert(/Tue 10 Nov already has Endurance/.test(sheet().textContent), "a day with a workout asks what to do");
+  assert(!!b8(/^Swap with Tue 10 Nov$/) && /Endurance moves to Tue 3 Nov/.test(sheet().textContent), "…Swap days is the default");
+  await click(b8(/^Swap with Tue 10 Nov$/));
+  assert(on(FROM).name === "Endurance" && on("2026-11-10").name === "Power", "swapping trades the two days");
+  await act(async () => root8.unmount());
+}
+
+console.log("Action row and ⋯ menu:");
+{
+  const UndoButton = (await jiti.import("../src/components/UndoButton")).default;
+  const DAY = "2026-11-17";
+  const on = (d) => activeWorkouts(useStore.getState()).find((w) => w.date === d);
+  st.applyWorkoutToDates(
+    { name: "Limit", sections: [], exercises: [{ id: "l", name: "Limit boulders", category: "on_wall_drills", measureType: "reps", status: "none" }] },
+    [DAY],
+    "replace",
+  );
+  await act(async () => useStore.setState({ undoStack: [] }));
+  const host9 = document.createElement("div");
+  document.body.appendChild(host9);
+  const root9 = createRoot(host9);
+  const h = React.createElement;
+  await act(async () => root9.render(h(MemoryRouter, null, h(WorkoutDayView, { date: DAY }), h(UndoButton))));
+  const b9 = (re) => [...host9.querySelectorAll("button")].find((b) => re.test(b.textContent));
+  const sheet = () => host9.querySelector('[role="dialog"][aria-label="Workout actions"]');
+  const undoIcon = () => [...host9.querySelectorAll("button")].find((b) => b.textContent === "↶");
+
+  for (const gone of [/Import note/, /Copy from…/, /Copy to…/, /Move to…/, /^Clear$/])
+    assert(!b9(gone), `${gone.source} is no longer in the action row`);
+  assert(!!b9(/＋ Exercise/) && !!b9(/＋ Section/), "＋ Exercise and ＋ Section stay");
+  assert(!undoIcon(), "↶ is hidden while there's nothing to undo");
+
+  await click(host9.querySelector('button[aria-label="More actions"]'));
+  assert(!!sheet() && /Limit · Tue 17 Nov/.test(sheet().textContent), "⋯ opens a sheet for this workout");
+  for (const item of [/Move to another day/, /Copy to other days/, /Import a coach's note/, /Copy in a previous workout/, /Clear this day/])
+    assert(!!b9(item), `the sheet offers ${item.source}`);
+  await click(b9(/Copy to other days/));
+  assert(!sheet() && !!host9.querySelector('[role="dialog"][aria-label="Copy to other days"]'), "picking an item swaps the menu for that dialog");
+  await click(b9(/^(Close|Cancel)$/));
+
+  await click(host9.querySelector('button[aria-label="More actions"]'));
+  await click(b9(/Clear this day/));
+  assert(on(DAY).exercises.length === 1 && /You can undo it/.test(sheet().textContent), "Clear asks first");
+  await click(b9(/^Cancel$/));
+  assert(!!b9(/Clear this day/) && on(DAY).exercises.length === 1, "…Cancel keeps the day");
+  await click(b9(/Clear this day/));
+  await click(b9(/^Yes, clear day$/));
+  assert(!sheet() && on(DAY).exercises.length === 0, "Yes, clear day empties it and closes the sheet");
+  assert(/Cleared the day/.test(host9.textContent), "…and the toast offers Undo");
+  await click(host9.querySelector('button[aria-label^="Undo Cleared"]'));
+  assert(on(DAY).exercises.length === 1, "Undo brings it back");
+
+  await click(b9(/＋ Section/));
+  assert(undoIcon()?.getAttribute("aria-label")?.startsWith("Undo "), "after a change, ↶ appears and names what it undoes");
+  await click(host9.querySelector('button[aria-label="More actions"]'));
+  await click(host9.querySelector('[role="dialog"]').parentElement);
+  assert(!sheet(), "tapping outside the sheet closes it");
+  await act(async () => root9.unmount());
 }
 console.log(failures === 0 ? "\nDAY VIEW OK ✅" : `\n${failures} FAILURES ❌`);
 process.exit(failures ? 1 : 0);

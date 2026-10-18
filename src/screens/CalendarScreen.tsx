@@ -15,8 +15,40 @@ import { useActiveCheckIns, useActiveWorkouts } from "../store/useStore";
 import { isEmptyWorkout } from "../lib/workoutPlan";
 import { dateKey, todayKey } from "../lib/dates";
 import { COLOR_HEX } from "../lib/scoring";
+import WeekView from "../components/WeekView";
+
+type View = "week" | "month";
 
 export default function CalendarScreen() {
+  // Always opens on this week.
+  const [view, setView] = useState<View>("week");
+
+  return (
+    <div className="space-y-4 py-4">
+      <header className="flex min-h-16 items-center justify-between">
+        <h1 className="text-xl font-bold">Calendar</h1>
+        <div className="flex gap-0.5 rounded-xl bg-slate-100 p-0.5 dark:bg-slate-800" role="group" aria-label="Calendar view">
+          {(["week", "month"] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setView(v)}
+              aria-pressed={view === v}
+              className={`h-10 rounded-[10px] px-4 text-sm font-semibold ${
+                view === v ? "bg-sky-600 text-white" : "text-slate-600 dark:text-slate-300"
+              }`}
+            >
+              {v === "week" ? "Week" : "Month"}
+            </button>
+          ))}
+        </div>
+      </header>
+      {view === "week" ? <WeekView /> : <MonthView />}
+    </div>
+  );
+}
+
+function MonthView() {
   const navigate = useNavigate();
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
   const checkIns = useActiveCheckIns();
@@ -33,31 +65,28 @@ export default function CalendarScreen() {
   const today = todayKey();
 
   return (
-    <div className="space-y-4 py-4">
-      <header className="flex min-h-16 items-center justify-between">
-        <h1 className="text-xl font-bold">Calendar</h1>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setCursor((c) => subMonths(c, 1))}
-            className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm dark:bg-slate-800"
-            aria-label="previous month"
-          >
-            ‹
-          </button>
-          <span className="w-28 text-center text-sm font-medium">
-            {format(cursor, "MMMM yyyy")}
-          </span>
-          <button
-            type="button"
-            onClick={() => setCursor((c) => addMonths(c, 1))}
-            className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm dark:bg-slate-800"
-            aria-label="next month"
-          >
-            ›
-          </button>
-        </div>
-      </header>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => setCursor((c) => subMonths(c, 1))}
+          className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm dark:bg-slate-800"
+          aria-label="previous month"
+        >
+          ‹
+        </button>
+        <span className="w-28 text-center text-sm font-medium">
+          {format(cursor, "MMMM yyyy")}
+        </span>
+        <button
+          type="button"
+          onClick={() => setCursor((c) => addMonths(c, 1))}
+          className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm dark:bg-slate-800"
+          aria-label="next month"
+        >
+          ›
+        </button>
+      </div>
 
       <p className="text-xs text-slate-500">Tap a day to import a coach's note, copy a workout, or build one.</p>
 

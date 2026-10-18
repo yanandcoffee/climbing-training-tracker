@@ -12,28 +12,27 @@ import {
 } from "date-fns";
 import { dateKey, parseKey, todayKey } from "../lib/dates";
 
-/** Month grid where tapping days toggles them. Days with a workout get a dot. */
-export default function MultiDatePicker({
-  selected,
-  onChange,
+/** Month grid of tappable days, with ‹ › to change month. Days in `markedDates` get a dot. */
+export function MonthGrid({
+  isSelected,
+  onTap,
   markedDates,
+  isDisabled,
+  initialDate,
 }: {
-  selected: string[];
-  onChange: (dates: string[]) => void;
+  isSelected: (key: string) => boolean;
+  onTap: (key: string) => void;
   markedDates?: Set<string>;
+  isDisabled?: (key: string) => boolean;
+  /** Which month to open on. */
+  initialDate?: string;
 }) {
-  const [cursor, setCursor] = useState(() =>
-    startOfMonth(selected[0] ? parseKey(selected[0]) : new Date()),
-  );
+  const [cursor, setCursor] = useState(() => startOfMonth(initialDate ? parseKey(initialDate) : new Date()));
   const days = eachDayOfInterval({
     start: startOfWeek(startOfMonth(cursor)),
     end: endOfWeek(endOfMonth(cursor)),
   });
   const today = todayKey();
-  const sel = new Set(selected);
-
-  const toggle = (key: string) =>
-    onChange(sel.has(key) ? selected.filter((d) => d !== key) : [...selected, key].sort());
 
   return (
     <div>
@@ -64,16 +63,18 @@ export default function MultiDatePicker({
       <div className="mt-1 grid grid-cols-7 gap-1">
         {days.map((d) => {
           const key = dateKey(d);
-          const on = sel.has(key);
+          const on = isSelected(key);
           const inMonth = isSameMonth(d, cursor);
+          const disabled = isDisabled?.(key) ?? false;
           return (
             <button
               key={key}
               type="button"
-              onClick={() => toggle(key)}
+              onClick={() => onTap(key)}
+              disabled={disabled}
               aria-pressed={on}
               aria-label={format(d, "EEEE d MMMM")}
-              className={`relative flex h-9 flex-col items-center justify-center rounded-lg text-sm ${
+              className={`relative flex h-9 flex-col items-center justify-center rounded-lg text-sm disabled:opacity-40 ${
                 on
                   ? "bg-sky-600 font-semibold text-white"
                   : inMonth
@@ -92,5 +93,29 @@ export default function MultiDatePicker({
         })}
       </div>
     </div>
+  );
+}
+
+/** Month grid where tapping days toggles them. Days with a workout get a dot. */
+export default function MultiDatePicker({
+  selected,
+  onChange,
+  markedDates,
+}: {
+  selected: string[];
+  onChange: (dates: string[]) => void;
+  markedDates?: Set<string>;
+}) {
+  const sel = new Set(selected);
+  const toggle = (key: string) =>
+    onChange(sel.has(key) ? selected.filter((d) => d !== key) : [...selected, key].sort());
+
+  return (
+    <MonthGrid
+      isSelected={(key) => sel.has(key)}
+      onTap={toggle}
+      markedDates={markedDates}
+      initialDate={selected[0]}
+    />
   );
 }

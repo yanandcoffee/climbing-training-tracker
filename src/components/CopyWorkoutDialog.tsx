@@ -63,7 +63,11 @@ export default function CopyWorkoutDialog({
 
   return (
     <div className="fixed inset-0 z-30 flex items-end justify-center bg-black/40 sm:items-center sm:p-4">
-      <div className="max-h-[90vh] w-full max-w-xl space-y-3 overflow-y-auto rounded-t-2xl bg-white p-4 dark:bg-slate-900 sm:rounded-2xl">
+      <div
+        role="dialog"
+        aria-label={direction === "from" ? "Copy a workout here" : "Copy to other days"}
+        className="max-h-[90vh] w-full max-w-xl space-y-3 overflow-y-auto rounded-t-2xl bg-white p-4 dark:bg-slate-900 sm:rounded-2xl"
+      >
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold">
             {direction === "from" ? `Copy a workout to ${shortDate(date)}` : "Copy to other days"}

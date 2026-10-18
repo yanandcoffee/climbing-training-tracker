@@ -15,7 +15,8 @@ import type {
 } from "../types";
 import { uid } from "../lib/id";
 import { scoreForCheckIn } from "../lib/scoring";
-import { mergeBody, type WorkoutBody } from "../lib/workoutPlan";
+import { isEmptyWorkout, mergeBody, type WorkoutBody } from "../lib/workoutPlan";
+import { shortDate } from "../lib/dates";
 import { LocalStorageAdapter } from "../storage/LocalStorageAdapter";
 import {
   emptySnapshot,
@@ -75,6 +76,12 @@ interface State {
     mode: "replace" | "append",
     label?: Label,
   ) => void;
+  /**
+   * Reschedule `from`'s workout onto `to`, keeping its marks and logged numbers.
+   * If `to` already has a workout: "swap" puts that one on `from`; "append"
+   * adds the moved workout to it.
+   */
+  moveWorkout: (from: string, to: string, mode: MoveMode) => void;
   setExerciseStatus: (
     workoutId: string,
     exerciseId: string,
@@ -99,6 +106,8 @@ interface State {
   applyRemote: (rows: Row[]) => void;
   clearAll: () => void;
 }
+
+export type MoveMode = "swap" | "append";
 
 type SyncedKeys = { id: string; updatedAt: number; deletedAt?: number };
 
@@ -293,6 +302,34 @@ export const useStore = create<State>((set, get) => {
           : [...workouts, next];
       }
       persistUndoable(label, { workouts });
+    },
+
+    moveWorkout: (from, to, mode) => {
+      if (from === to) return;
+      const find = (date: string) => get().workouts.find((w) => w.date === date && !w.deletedAt);
+      const src = find(from);
+      if (!src || isEmptyWorkout(src)) return;
+      const dst = find(to);
+      const body = (w: Workout | undefined): WorkoutBody => ({
+        name: w?.name,
+        sections: w?.sections ?? [],
+        exercises: w?.exercises ?? [],
+      });
+      const occupied = !isEmptyWorkout(dst);
+      const toBody =
+        occupied && mode === "append" ? mergeBody(body(dst), body(src), "append", true) : body(src);
+      const fromBody = occupied && mode === "swap" ? body(dst) : body(undefined);
+      const now = Date.now();
+      const write = (workouts: Workout[], date: string, existing: Workout | undefined, b: WorkoutBody) => {
+        const next: Workout = { id: existing?.id ?? `wo-${date}`, date, ...b, updatedAt: now };
+        return existing ? workouts.map((w) => (w.id === existing.id ? next : w)) : [...workouts, next];
+      };
+      const label = !occupied
+        ? `Moved workout to ${shortDate(to)}`
+        : mode === "swap"
+          ? `Swapped ${shortDate(from)} and ${shortDate(to)}`
+          : `Added workout to ${shortDate(to)}`;
+      persistUndoable(label, { workouts: write(write(get().workouts, to, dst, toBody), from, src, fromBody) });
     },
 
     setExerciseStatus: (workoutId, exerciseId, status) =>

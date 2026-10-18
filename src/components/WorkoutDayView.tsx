@@ -58,8 +58,10 @@ import { SignedLoadInput } from "./LoadInput";
 import { UndoInlineButton } from "./UndoButton";
 import ImportNotesDialog from "./ImportNotesDialog";
 import CopyWorkoutDialog from "./CopyWorkoutDialog";
+import MoveWorkoutDialog from "./MoveWorkoutDialog";
+import DayMenuSheet from "./DayMenuSheet";
 
-type Dialog = "import" | "copyFrom" | "copyTo" | null;
+type Dialog = "menu" | "import" | "copyFrom" | "copyTo" | "move" | null;
 
 const card =
   "rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900";
@@ -78,7 +80,6 @@ export default function WorkoutDayView({ date }: { date: string }) {
   const [adding, setAdding] = useState<{ sectionId?: string } | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [openId, setOpenId] = useState<string | null>(null);
-  const [confirmClear, setConfirmClear] = useState(false);
   // A section just made with "＋ Section", whose name opens for editing.
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [reorderingSections, setReorderingSections] = useState(false);
@@ -188,6 +189,20 @@ export default function WorkoutDayView({ date }: { date: string }) {
         <CopyWorkoutDialog
           date={date}
           direction={dialog === "copyFrom" ? "from" : "to"}
+          onClose={() => setDialog(null)}
+        />
+      )}
+      {dialog === "move" && <MoveWorkoutDialog date={date} onClose={() => setDialog(null)} />}
+      {dialog === "menu" && (
+        <DayMenuSheet
+          date={date}
+          name={workout.name}
+          canCopyFrom={workouts.some((w) => w.date !== date && !isEmptyWorkout(w))}
+          onPick={setDialog}
+          onClear={() => {
+            update((w) => ({ ...w, name: undefined, sections: [], exercises: [] }), "Cleared the day");
+            setDialog(null);
+          }}
           onClose={() => setDialog(null)}
         />
       )}
@@ -398,26 +413,18 @@ export default function WorkoutDayView({ date }: { date: string }) {
           ＋ Exercise
         </ActionBtn>
         <ActionBtn onClick={addSection}>＋ Section</ActionBtn>
-        <ActionBtn onClick={() => setDialog("import")}>📋 Import note</ActionBtn>
-        <ActionBtn onClick={() => setDialog("copyFrom")}>⧉ Copy from…</ActionBtn>
-        <ActionBtn onClick={() => setDialog("copyTo")}>Copy to…</ActionBtn>
-        {confirmClear ? (
-          <span className="flex items-center gap-1 text-xs">
-            <ActionBtn
-              danger
-              onClick={() => {
-                update((w) => ({ ...w, name: undefined, sections: [], exercises: [] }), "Cleared the day");
-                setConfirmClear(false);
-              }}
-            >
-              Yes, clear day
-            </ActionBtn>
-            <ActionBtn onClick={() => setConfirmClear(false)}>Cancel</ActionBtn>
-          </span>
-        ) : (
-          <ActionBtn onClick={() => setConfirmClear(true)}>Clear</ActionBtn>
-        )}
-        <UndoInlineButton className="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200" />
+        <span className="ml-auto flex gap-1.5">
+          <UndoInlineButton compact className="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200" />
+          <button
+            type="button"
+            onClick={() => setDialog("menu")}
+            aria-label="More actions"
+            aria-haspopup="dialog"
+            className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+          >
+            ⋯
+          </button>
+        </span>
       </div>
 
       {addPanel}
@@ -497,23 +504,17 @@ function ActionBtn({
   children,
   onClick,
   primary,
-  danger,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   primary?: boolean;
-  danger?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={`rounded-lg px-2.5 py-1.5 text-xs font-medium ${
-        primary
-          ? "bg-sky-600 text-white"
-          : danger
-            ? "bg-red-600 text-white"
-            : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+        primary ? "bg-sky-600 text-white" : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
       }`}
     >
       {children}

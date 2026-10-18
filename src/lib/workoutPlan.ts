@@ -24,23 +24,23 @@ export const isEmptyWorkout = (w: Pick<Workout, "exercises" | "sections"> | unde
 /**
  * A fresh copy of a workout's content: new ids, sections re-linked, and
  * progress (status + logged metrics) cleared — prescriptions are kept.
+ * `keepProgress` keeps the marks and logged numbers (a workout being moved).
  */
-export function freshCopy(body: WorkoutBody): WorkoutBody {
+export function freshCopy(body: WorkoutBody, keepProgress = false): WorkoutBody {
   const idMap = new Map<string, string>();
   const sections = body.sections.map((s) => {
     const id = uid();
     idMap.set(s.id, id);
     return { ...s, id, notes: s.notes ? [...s.notes] : undefined };
   });
-  const exercises = body.exercises.map((e) => {
-    const { metrics: _metrics, ...rest } = e;
-    void _metrics;
+  const exercises = body.exercises.map((e): WorkoutExercise => {
+    const { metrics, ...rest } = e;
     return {
       ...rest,
       id: uid(),
       sectionId: e.sectionId ? idMap.get(e.sectionId) : undefined,
       prescription: e.prescription ? { ...e.prescription } : undefined,
-      status: "none" as const,
+      ...(keepProgress ? { metrics } : { status: "none" as const }),
     };
   });
   return { name: body.name, sections, exercises };
@@ -95,8 +95,10 @@ export function mergeBody(
   existing: WorkoutBody,
   incoming: WorkoutBody,
   mode: "replace" | "append",
+  /** Keep the incoming marks and logged numbers; an incoming item with progress is never dropped as a duplicate. */
+  keepProgress = false,
 ): WorkoutBody {
-  const fresh = freshCopy(incoming);
+  const fresh = freshCopy(incoming, keepProgress);
   if (mode === "replace" || isEmptyWorkout(existing)) return fresh;
 
   const sections: WorkoutSection[] = existing.sections.map((s) => ({
@@ -116,6 +118,7 @@ export function mergeBody(
     }
   }
   const matches = matchExisting(existing.exercises, fresh.exercises);
+  if (keepProgress) for (const i of [...matches.keys()]) if (hasProgress(fresh.exercises[i])) matches.delete(i);
   const kept = existing.exercises.map((e) => ({ ...e }));
   for (const [ii, ei] of matches) {
     const mine = kept[ei];

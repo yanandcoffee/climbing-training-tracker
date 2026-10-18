@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "check": "jiti test/harness.ts && jiti test/workouts.test.ts && jiti test/gemini.test.ts && jiti test/sync.test.ts && jiti test/hooks.test.ts && node test/mount.mjs && node test/checkin.mjs && node test/dayview.mjs"
+    "check": "jiti test/harness.ts && jiti test/workouts.test.ts && jiti test/gemini.test.ts && jiti test/sync.test.ts && jiti test/hooks.test.ts && node test/mount.mjs && node test/checkin.mjs && node test/dayview.mjs && node test/calendar.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",

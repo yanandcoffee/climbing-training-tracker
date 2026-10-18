@@ -27,9 +27,13 @@ export function useUndo() {
   return { top, doUndo };
 }
 
-/** A small "↶ Undo" button that lives in a screen's own toolbar. */
-export function UndoInlineButton({ className = "" }: { className?: string }) {
+/**
+ * A small "↶ Undo" button that lives in a screen's own toolbar.
+ * `compact` shows just the arrow, and only while there's something to undo.
+ */
+export function UndoInlineButton({ className = "", compact = false }: { className?: string; compact?: boolean }) {
   const { top, doUndo } = useUndo();
+  if (compact && !top) return null;
   return (
     <button
       type="button"
@@ -39,7 +43,7 @@ export function UndoInlineButton({ className = "" }: { className?: string }) {
       title={top ? `Undo: ${top.label}` : "Nothing to undo"}
       className={`rounded-lg px-2.5 py-1.5 text-xs font-medium disabled:opacity-40 ${className}`}
     >
-      ↶ Undo
+      {compact ? "↶" : "↶ Undo"}
     </button>
   );
 }

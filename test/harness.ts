@@ -265,6 +265,51 @@ console.log("Undo:");
   assert(st().undoStack.length === 0, "a reload starts with nothing to undo");
 }
 
+// Rescheduling a workout to another day
+console.log("Move workout:");
+{
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+  const st = () => useStore.getState();
+  const on = (d: string) => activeWorkouts(st()).filter((w) => w.date === d);
+  const it = (id: string, name: string, status: "none" | "complete" = "none") =>
+    ({ id, name, category: "core" as const, measureType: "hold" as const, status, sectionId: "s" });
+  const A = "2026-04-01", B = "2026-04-03", C = "2026-04-05";
+  st().applyWorkoutToDates({ name: "Fingers", sections: [{ id: "s", title: "Main" }], exercises: [it("p", "Plank"), it("h", "Hang")] }, [A], "replace");
+  await tick();
+  const done = on(A)[0];
+  st().saveWorkout({ ...done, exercises: done.exercises.map((e) => (e.name === "Plank" ? { ...e, status: "complete" as const } : e)) });
+  await tick();
+
+  st().moveWorkout(A, B, "swap");
+  await tick();
+  assert(on(B).length === 1 && on(B)[0].name === "Fingers" && on(B)[0].exercises.length === 2, "moves the workout onto an empty day (one record for it)");
+  assert(on(B)[0].exercises.find((e) => e.name === "Plank")?.status === "complete", "…keeping its checkmarks");
+  assert(on(A).length === 1 && on(A)[0].exercises.length === 0 && on(A)[0].name === undefined, "…and leaves the old day empty");
+  assert(st().undoStack.at(-1)?.label === "Moved workout to 3 Apr", "the undo step names where it went");
+  st().undo();
+  assert(on(A)[0].name === "Fingers" && on(B)[0].exercises.length === 0, "one undo puts it back");
+
+  st().applyWorkoutToDates({ name: "Legs", sections: [], exercises: [it("l", "Lunge"), it("p2", "Plank")] }, [C], "replace");
+  await tick();
+  st().moveWorkout(A, C, "swap");
+  await tick();
+  assert(on(C)[0].name === "Fingers" && on(A)[0].name === "Legs", "swap: the two days trade workouts");
+  st().undo();
+  await tick();
+  st().moveWorkout(A, C, "append");
+  await tick();
+  const names = on(C)[0].exercises.map((e) => e.name);
+  assert(on(C)[0].name === "Legs" && names.join() === "Lunge,Plank,Plank,Hang", "add to it: both on one day; a Plank already done comes along rather than being dropped");
+  assert(on(A)[0].exercises.length === 0, "…and the old day is empty");
+  st().undo();
+  assert(on(A)[0].exercises.length === 2 && on(C)[0].exercises.length === 2, "…undone in one step");
+
+  st().moveWorkout("2026-04-09", C, "swap");
+  st().moveWorkout(A, A, "swap");
+  await tick();
+  assert(on(A)[0].exercises.length === 2 && on(C)[0].name === "Legs", "moving an empty day, or onto itself, does nothing");
+}
+
 // Export/import round-trip
 const snap = useStore.getState().exportSnapshot();
 assert(snap.workouts.length >= 1 && snap.checkIns.length >= 1, "snapshot contains data");
