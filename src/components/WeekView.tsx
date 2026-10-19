@@ -22,6 +22,7 @@ import { useActiveCheckIns, useActiveWorkouts, useStore } from "../store/useStor
 import { isEmptyWorkout } from "../lib/workoutPlan";
 import { dateKey, todayKey } from "../lib/dates";
 import { COLOR_HEX } from "../lib/scoring";
+import PeriodNav from "./PeriodNav";
 
 const DAY = "day:";
 const EDGE_PREV = "edge:prev";
@@ -147,38 +148,14 @@ export default function WeekView() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setWeekStart((w) => addWeeks(w, -1))}
-          className="h-11 w-11 rounded-xl bg-slate-100 text-lg dark:bg-slate-800"
-          aria-label="previous week"
-        >
-          ‹
-        </button>
-        <div className="flex flex-1 flex-col items-center">
-          <span className="text-[15px] font-semibold">{weekTitle(weekStart)}</span>
-          {thisWeek ? (
-            <span className="text-[11px] text-slate-500 dark:text-slate-400">This week</span>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setWeekStart(startOfWeek(new Date()))}
-              className="text-[11px] font-medium text-sky-600 dark:text-sky-400"
-            >
-              Back to this week
-            </button>
-          )}
-        </div>
-        <button
-          type="button"
-          onClick={() => setWeekStart((w) => addWeeks(w, 1))}
-          className="h-11 w-11 rounded-xl bg-slate-100 text-lg dark:bg-slate-800"
-          aria-label="next week"
-        >
-          ›
-        </button>
-      </div>
+      <PeriodNav
+        title={weekTitle(weekStart)}
+        unit="week"
+        isCurrent={thisWeek}
+        onPrev={() => setWeekStart((w) => addWeeks(w, -1))}
+        onNext={() => setWeekStart((w) => addWeeks(w, 1))}
+        onToday={() => setWeekStart(startOfWeek(new Date()))}
+      />
 
       {moving ? (
         <p className="rounded-lg bg-sky-50 px-2.5 py-1.5 text-xs text-sky-900 dark:bg-sky-950 dark:text-sky-200">

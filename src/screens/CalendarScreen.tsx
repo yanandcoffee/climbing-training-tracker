@@ -16,6 +16,7 @@ import { isEmptyWorkout } from "../lib/workoutPlan";
 import { dateKey, todayKey } from "../lib/dates";
 import { COLOR_HEX } from "../lib/scoring";
 import WeekView from "../components/WeekView";
+import PeriodNav from "../components/PeriodNav";
 
 type View = "week" | "month";
 
@@ -65,34 +66,21 @@ function MonthView() {
   const today = todayKey();
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <button
-          type="button"
-          onClick={() => setCursor((c) => subMonths(c, 1))}
-          className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm dark:bg-slate-800"
-          aria-label="previous month"
-        >
-          ‹
-        </button>
-        <span className="w-28 text-center text-sm font-medium">
-          {format(cursor, "MMMM yyyy")}
-        </span>
-        <button
-          type="button"
-          onClick={() => setCursor((c) => addMonths(c, 1))}
-          className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm dark:bg-slate-800"
-          aria-label="next month"
-        >
-          ›
-        </button>
-      </div>
+    <div className="space-y-3">
+      <PeriodNav
+        title={format(cursor, "MMMM yyyy")}
+        unit="month"
+        isCurrent={isSameMonth(cursor, new Date())}
+        onPrev={() => setCursor((c) => subMonths(c, 1))}
+        onNext={() => setCursor((c) => addMonths(c, 1))}
+        onToday={() => setCursor(startOfMonth(new Date()))}
+      />
 
-      <p className="text-xs text-slate-500">Tap a day to import a coach's note, copy a workout, or build one.</p>
+      <p className="text-xs text-slate-500 dark:text-slate-400">Tap a day to import a coach's note, copy a workout, or build one.</p>
 
-      <div className="grid grid-cols-7 gap-1 text-center text-[11px] text-slate-400">
-        {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
-          <div key={i}>{d}</div>
+      <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-semibold tracking-wide text-slate-500 dark:text-slate-400">
+        {["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"].map((d) => (
+          <div key={d}>{d}</div>
         ))}
       </div>
 
@@ -110,17 +98,20 @@ function MonthView() {
               key={key}
               type="button"
               onClick={() => navigate(`/day/${key}`)}
-              className={`relative flex aspect-square flex-col items-center justify-center rounded-lg border text-sm ${
-                isToday
-                  ? "border-sky-500"
-                  : "border-transparent"
-              } ${
+              aria-current={isToday ? "date" : undefined}
+              className={`relative flex aspect-square flex-col items-center justify-center rounded-lg text-base font-bold ${
                 inMonth
                   ? "bg-white dark:bg-slate-900"
                   : "bg-transparent text-slate-300 dark:text-slate-600"
               }`}
             >
-              <span>{format(d, "d")}</span>
+              <span
+                className={
+                  isToday ? "flex h-7.5 w-7.5 items-center justify-center rounded-full bg-sky-600 text-white" : undefined
+                }
+              >
+                {format(d, "d")}
+              </span>
               <span className="mt-1 flex h-2 items-center gap-0.5">
                 {ci && (
                   <span

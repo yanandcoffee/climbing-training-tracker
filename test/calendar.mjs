@@ -115,8 +115,14 @@ assert(weekTitle(new Date(2026, 8, 27)) === "27 Sep – 3 Oct" && weekTitle(new 
 assert(weekTitle(new Date(2030, 0, 6)) === "6 – 12 January 2030", "…with the year when it isn't this year");
 
 console.log("Month view:");
+const weekArrow = host.querySelector('button[aria-label="previous week"]').className;
 await click(btn(/^Month$/));
 assert(!!host.querySelector('button[aria-label="previous month"]') && !host.querySelector("li[data-date]"), "Month switches to the month grid");
+assert(host.querySelector('button[aria-label="previous month"]').className === weekArrow, "its arrows are the same size as the week's");
+assert(/This month/.test(host.textContent), "…and it says This month, like This week");
+await click(host.querySelector('button[aria-label="next month"]'));
+await click(btn(/^Back to this month$/));
+assert(/This month/.test(host.textContent) && !btn(/^Back to this month$/), "Back to this month returns");
 await click(btn(/^Week$/));
 assert(host.querySelectorAll("li[data-date]").length === 7, "…and Week back");
 
