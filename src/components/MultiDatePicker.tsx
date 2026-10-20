@@ -11,8 +11,11 @@ import {
   subMonths,
 } from "date-fns";
 import { dateKey, parseKey, todayKey } from "../lib/dates";
+import PeriodNav from "./PeriodNav";
 
-/** Month grid of tappable days, with ‹ › to change month. Days in `markedDates` get a dot. */
+const WEEKDAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+
+/** Month grid of tappable days, with the calendar's ‹ › bar to change month. Days in `markedDates` get a dot. */
 export function MonthGrid({
   isSelected,
   onTap,
@@ -35,37 +38,27 @@ export function MonthGrid({
   const today = todayKey();
 
   return (
-    <div>
-      <div className="mb-2 flex items-center justify-between">
-        <button
-          type="button"
-          onClick={() => setCursor((c) => subMonths(c, 1))}
-          className="rounded-lg bg-slate-100 px-3 py-1 text-sm dark:bg-slate-800"
-          aria-label="previous month"
-        >
-          ‹
-        </button>
-        <span className="text-sm font-medium">{format(cursor, "MMMM yyyy")}</span>
-        <button
-          type="button"
-          onClick={() => setCursor((c) => addMonths(c, 1))}
-          className="rounded-lg bg-slate-100 px-3 py-1 text-sm dark:bg-slate-800"
-          aria-label="next month"
-        >
-          ›
-        </button>
-      </div>
-      <div className="grid grid-cols-7 gap-1 text-center text-[10px] text-slate-400">
-        {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
-          <div key={i}>{d}</div>
+    <div className="space-y-2">
+      <PeriodNav
+        title={format(cursor, "MMMM yyyy")}
+        unit="month"
+        isCurrent={isSameMonth(cursor, new Date())}
+        onPrev={() => setCursor((c) => subMonths(c, 1))}
+        onNext={() => setCursor((c) => addMonths(c, 1))}
+        onToday={() => setCursor(startOfMonth(new Date()))}
+      />
+      <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-semibold tracking-wide text-slate-500 dark:text-slate-400">
+        {WEEKDAYS.map((d) => (
+          <div key={d}>{d}</div>
         ))}
       </div>
-      <div className="mt-1 grid grid-cols-7 gap-1">
+      <div className="grid grid-cols-7 gap-1">
         {days.map((d) => {
           const key = dateKey(d);
           const on = isSelected(key);
           const inMonth = isSameMonth(d, cursor);
           const disabled = isDisabled?.(key) ?? false;
+          const isToday = key === today;
           return (
             <button
               key={key}
@@ -73,19 +66,31 @@ export function MonthGrid({
               onClick={() => onTap(key)}
               disabled={disabled}
               aria-pressed={on}
+              aria-current={isToday ? "date" : undefined}
               aria-label={format(d, "EEEE d MMMM")}
-              className={`relative flex h-9 flex-col items-center justify-center rounded-lg text-sm disabled:opacity-40 ${
+              className={`relative flex h-11 items-center justify-center rounded-lg text-base font-bold disabled:opacity-40 ${
                 on
-                  ? "bg-sky-600 font-semibold text-white"
+                  ? "bg-sky-600 text-white"
                   : inMonth
                     ? "bg-slate-50 dark:bg-slate-800"
                     : "text-slate-300 dark:text-slate-600"
-              } ${key === today && !on ? "ring-1 ring-sky-500" : ""}`}
+              }`}
             >
-              {format(d, "d")}
+              {/* Today gets the month view's filled circle (inverted when it's picked). */}
+              <span
+                className={
+                  isToday
+                    ? `flex h-7.5 w-7.5 items-center justify-center rounded-full ${
+                        on ? "bg-white text-sky-700" : "bg-sky-600 text-white"
+                      }`
+                    : undefined
+                }
+              >
+                {format(d, "d")}
+              </span>
               {markedDates?.has(key) && (
                 <span
-                  className={`absolute bottom-1 h-1 w-1 rounded-full ${on ? "bg-white" : "bg-sky-500"}`}
+                  className={`absolute bottom-0.5 h-1 w-1 rounded-full ${on ? "bg-white" : "bg-sky-500"}`}
                 />
               )}
             </button>

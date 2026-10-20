@@ -576,6 +576,10 @@ console.log("Move to another day:");
   assert(!!sheet() && /Power · Tue 3 Nov/.test(sheet().textContent), "Move to… opens a calendar sheet for this workout");
   assert(b8(/^Pick a day$/)?.disabled, "nothing is moved until a day is picked");
   assert(sheet().querySelector('button[aria-label="Tuesday 3 November"]').disabled, "its own day can't be picked");
+  assert(
+    /SUNMONTUE/.test(sheet().textContent) && /\bh-11 w-11\b/.test(sheet().querySelector('button[aria-label="next month"]').className),
+    "its calendar has the month view's labels and arrows",
+  );
   await click(b8(/^Tomorrow$/));
   assert(!!b8(/^Move to Wed 4 Nov$/), "Tomorrow picks the next day");
   await click(sheet().querySelector('button[aria-label="Thursday 5 November"]'));

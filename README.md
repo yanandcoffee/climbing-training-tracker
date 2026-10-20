@@ -3,13 +3,34 @@
 My personal bouldering training tracker — a mobile-first web app for planning workouts, logging them, and watching progress over time:
 
 - **Daily readiness check-in** — Green / Yellow / Orange / Red / Black, graded to a points score.
-- **Calendar** for planning: on any day, import a coach's note, copy a previous workout, or build one exercise by exercise.
+- **Calendar** for planning: a week view where you hold a workout and drag it to another day (or another week), and a month view. On any day, import a coach's note, copy a previous workout, or build one exercise by exercise.
+- **Reschedule** a workout from its day: **⋯ → Move to another day**, then pick a date — if that day already has a workout, swap the two or combine them. Marks and logged numbers move with it, and every change can be undone.
 - **Exercises are building blocks** (name, category — _warm up_, _on-wall drills_, _off-the-wall strength & conditioning_, _core_, _mobility_ — cues, media). Sets/reps/time/weight live on each **workout**, so the same exercise progresses week to week (e.g. Shrugs 1×5 → 1×7). Adding an exercise pre-fills last time's numbers.
 - **Workouts** follow the coach's structure — sections (e.g. Pre Climbing / Climbing / Post Climbing), groups (e.g. TFCC warm up), and focus cues — with complete / partial / skipped marks.
 - **Time-based exercises** (timed holds, "max reps in 10 s", timed activities), loads in lb or kg, and no-target items (like climbing drills) that are just a checkbox.
 - **Reference media** (image/video URL) per exercise to confirm form.
 - **Trend charts** per exercise and a readiness-over-time view.
 - **Import a coach's note** — an LLM turns it into a workout on the days you pick, matching exercises you already have so their history continues (optional; choose **Claude (Anthropic)**, **ChatGPT (OpenAI)** or **Gemini (Google)** and use your own API key — Gemini has a free tier).
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/today.png" width="250" alt="Today: readiness check-in"><br><sub><b>Today</b> — how do you feel?</sub></td>
+    <td align="center"><img src="docs/screenshots/workout.png" width="250" alt="Today's workout with sections and Done / Partial / Skip"><br><sub><b>Workout</b> — mark each exercise</sub></td>
+    <td align="center"><img src="docs/screenshots/menu.png" width="250" alt="The ⋯ menu: move, copy, import, clear"><br><sub><b>⋯ menu</b> — move, copy, import</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/calendar-week.png" width="250" alt="Calendar week view"><br><sub><b>Week</b> — the plan at a glance</sub></td>
+    <td align="center"><img src="docs/screenshots/calendar-drag.png" width="250" alt="Dragging a workout to another day"><br><sub><b>Drag</b> — hold a workout to move it</sub></td>
+    <td align="center"><img src="docs/screenshots/calendar-month.png" width="250" alt="Calendar month view with check-in dots"><br><sub><b>Month</b> — check-ins and workouts</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/exercise.png" width="250" alt="Max hangs load trend going up"><br><sub><b>Exercise trend</b> — load over time</sub></td>
+    <td align="center"><img src="docs/screenshots/progress.png" width="250" alt="Readiness over time chart"><br><sub><b>Progress</b> — readiness over time</sub></td>
+    <td align="center"><img src="docs/screenshots/exercises.png" width="250" alt="Exercise library grouped by category"><br><sub><b>Exercises</b> — your building blocks</sub></td>
+  </tr>
+</table>
+
+<sub>Screenshots use demo data. To retake them after UI changes: <code>npm run build && npx vite preview --port 4795</code>, then <code>node scripts/screenshots.mjs http://localhost:4795 docs/screenshots</code> (needs Google Chrome).</sub>
 
 Your data is saved on the device you're using. Sign in to **Cloud sync** (Supabase, see below) and it's kept in your own Supabase project so every device has it; without sync, use **Settings → Export JSON** to back up or move data between devices.
 
